@@ -55,8 +55,21 @@ Um conjunto é uma estrutura de dados que de forma simplificada guarda um item �
 Dado um item a ser inserido, deve ser calculado seu Hash usando funções que vão mapear o item a varias posições do BitSet mencionado anteriormente
 
 
+ Fica mais facil visualizar com um diagrama (fonte: [wikipedia](https://commons.wikimedia.org/wiki/File:Bloom_filter.svg))
  
+ ![bloom filter](Bloom_filter.svg.png)
  
+ Os elementos {x,y,z} estão presentes no filtro. As setas coloridas sao as funções de hash utilizadas para modificar os bits no BitSet (a lista de 0 e 1). O elemento {w} não está no BitSet.
+ 
+ Com isso podemos afirmar que o Bloom Filter tem quase certeza de que os elementos {x,y,z} estão lá. Mas tem certeza absoluta de que {w} não está representado.
+ 
+ Está é uma característica do Bloom Filter. Ele pode dar falsos positivos (afirmar que um item existe mas ele não ter sido inserido) mas nunca dá falsos negativos. Esta caracteristica se junta a velocidade e economia de espaço como pontos de escolha do algoritmo.
+ 
+|              | Velocidade                                  | Espaço                               | Falso-Positivo | Falso negativo |
+|--------------|---------------------------------------------|--------------------------------------|----------------|----------------|
+| Hash         | Pior caso tem que percorrer todas as chaves | Guarda todos os valores              | nunca          | nunca          |
+| Bloom Filter | Pior caso é o tamanho do bitset             | Guarda uma representação dos valores | sim            | nunca          |
+
  
 
 
