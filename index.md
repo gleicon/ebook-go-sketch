@@ -38,7 +38,7 @@ Esta modificação é apenas verificar se a resposta a uma requisição existe n
 
 Esta explicação é importante para voltarmos ao Bloom Filter. No Chrome existem vários caches mas um deles pode crescer rápido: o do Safe Browsing. Safe Browsing é uma lista que o Google mantém baseado em duas pesquisas e reclamações recebidas sobre sites inseguros. Para que o browser não tivesse que consultar um serviço web a todo momento, com implicações de performance e segurança, foi decidido que esta lista poderia ser atualizada por download de tempos em tempos.
 
-A lista poderia - e ficou - maior que o que a memória de uma maquina poderia guardar, então guarda-la em um arquivo para consulta rápida foi considerado. Mas guardar as URLs inteiras seria um problema pelo tamanho que elas podem ter. Foi decidido guardar um Hash de cada URL, ou seja aplicada uma função em cada URL que mapearia um texto a um valor de tamanho fixo. Se usarmos os dados do [HTTP Archive](https://httparchive.org/reports/state-of-the-web) e colocassemos 25% das URLs existentes nesta lista, ficaria complexo conferir a cada request se uma URL esta na lista de URLs do safe browsing.
+A lista poderia ficar - e ficou - maior que o que a memória de uma maquina poderia guardar, então guarda-la em um arquivo para consulta rápida foi considerado. Mas guardar as URLs inteiras seria um problema pelo tamanho que elas podem ter. Foi decidido guardar um Hash de cada URL, ou seja aplicada uma função em cada URL que mapearia um texto a um valor de tamanho fixo. Se usarmos os dados do [HTTP Archive](https://httparchive.org/reports/state-of-the-web) e colocassemos 25% das URLs existentes nesta lista, ficaria complexo conferir a cada request se uma URL esta na lista de URLs do safe browsing.
 
 Á epoca foi decidido colocar esta lista em uma estrutura chamada Bloom Filter que depois mudaria para outra estrutura por conta do tamanho em disco e outras limitações descritas no link acima. Mas vamos focar no Bloom Filter.
 
@@ -59,18 +59,53 @@ Dado um item a ser inserido, deve ser calculado seu Hash usando funções que v�
  
  ![bloom filter](Bloom_filter.svg.png)
  
- Os elementos {x,y,z} estão presentes no filtro. As setas coloridas sao as funções de hash utilizadas para modificar os bits no BitSet (a lista de 0 e 1). O elemento {w} não está no BitSet.
+ Os elementos **{x,y,z}** foram adicionados no BitSet. As setas coloridas sao as funções de hash utilizadas para modificar os bits no BitSet (a lista de 0 e 1). O elemento **{w}** não está no BitSet.
  
- Com isso podemos afirmar que o Bloom Filter tem quase certeza de que os elementos {x,y,z} estão lá. Mas tem certeza absoluta de que {w} não está representado.
+ O BitSet resultante das adições cria uma situação interessante. O Bloom Filter tem _quase certeza_ de que os elementos **{x,y,z}** estão lá. Mas tem certeza absoluta de que  **{w}** não está representado. Porque quase certeza ? Existe a chance de que se procurarmos um elemento não existente no BitSet, uma de suas funções Hash indique um bit que esta em `1`
  
- Está é uma característica do Bloom Filter. Ele pode dar falsos positivos (afirmar que um item existe mas ele não ter sido inserido) mas nunca dá falsos negativos. Esta caracteristica se junta a velocidade e economia de espaço como pontos de escolha do algoritmo.
+ Esta é uma característica do Bloom Filter. Ele pode dar falsos positivos (afirmar que um item existe mas ele não ter sido inserido) mas nunca dá falsos negativos. A chance de falso positivos aumenta conforme aumenta o número de elementos adicionados ao Bloom Filter.
  
-|              | Velocidade                                  | Espaço                               | Falso-Positivo | Falso negativo |
-|--------------|---------------------------------------------|--------------------------------------|----------------|----------------|
-| Hash         | Pior caso tem que percorrer todas as chaves | Guarda todos os valores              | nunca          | nunca          |
-| Bloom Filter | Pior caso é o tamanho do bitset             | Guarda uma representação dos valores | sim            | nunca          |
+ Esta caracteristica se junta à velocidade e economia de espaço como pontos de escolha do algoritmo. A tabela abaixo compara Bloom Filter com um Hash/Dictionary/Map nestas caracteristicas:
+ 
+| Tipo         | Velocidade                                  | Guarda todos os valores (uso de espaço)                          | Falso Positivos | Falso Negativos |
+|--------------|---------------------------------------------|------------------------------------------------------------------|-----------------|-----------------|
+| Hash         | Pior caso tem que percorrer todas as chaves | sim                                                              | não             | não             |
+| Bloom Filter | Pior caso é o tamanho do bitset             | Guarda uma representação menor dos valores usando hash functions | sim             | não             |
+Vamos usar uma biblioteca para testar o Bloom Filter. Escolhi a biblioteca do site YourBasic pois é simples de usar e visualizar a implementação. O código fonte da biblioteca está em https://github.com/yourbasic/bloom. O playground para este codigo fica em https://play.golang.org/p/tDnQrVV3xBS
 
- 
+ ```
+package main
+
+import (
+	"fmt"
+
+	"github.com/yourbasic/bloom"
+)
+
+var safeBrowsingList *bloom.Filter
+
+func testAndReport(url string) {
+	if safeBrowsingList.Test(url) {
+		fmt.Println(url, "is not safe")
+	} else {
+		fmt.Println(url, "seems safe")
+	}
+}
+
+func main() {
+	// 1000 elementos, erro de 1/20 (0.5%)
+	safeBrowsingList = bloom.New(1000, 20)
+
+	safeBrowsingList.Add("https://badsite.com")
+	safeBrowsingList.Add("https://anotherbadsite.com")
+
+	fmt.Printf("Sites: %d\n", safeBrowsingList.Count())
+
+	testAndReport("https://lerolero.com")
+	testAndReport("https://badsite.com")
+}
+
+ ```
 
 
 #####     Servers em Go
