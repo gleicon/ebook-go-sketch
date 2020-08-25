@@ -235,16 +235,29 @@ func main() {
 
 ```
 
+Eu não gravei o filter em um arquivo, mas poderia ter feito com poucas modificações. Na parte final do programa acima usei a função Decode() do tipo _cuckoo.Filter_ para gerar um "dump" que pode ser reconstruido. Em Go poderiamos usar um protocolo de serialização como Gob ou binary diretamente também, implementando as funções no tipo.
 
+##### O que procurar em uma biblioteca?
 
-O que procurar em uma biblioteca?
+Neste ponto quero explicar o que procuro em uma biblioteca que oferece este tipo de estrutura de dados.
+
+Quando aprendo uma nova estrutura de dados eu procuro saber dos trade-offs, o que ela oferece de vantagem e o que preciso entender que não terei em relação a outras estruturas que conheço melhor. Procuro entender se as implementações vão permitir que consiga serializar e deserializar. 
+
+Também procuro o termo "Mergeable" ou "Merge" que significa que posso juntar mais de uma instancia deste tipo. Saber se os elementos podem ser deletados de alguma maneira vai me dizer um pouco disso também. 
+
+Olhando o código da biblioteca e conhecendo um pouco como Go funciona, eu tento ver como a implementação infere tipos - se isso acontece - e como usa reflection, uma técnica de inspeção que pode afetar a performance.
+
+Depois disso tento fazer um exemplo relacionando com uma estrutura conhecida, como comparei Bloom Filter com Map.
+
+Com isso vou melhorando meu entendimento e consigo interpretar melhor o artigo ou origem da estrutura. Eu mantenho alguns projetos que facilitam este entendimento e vou usar um deles para contextualizar as estruturas que vimos até agora e como uso outra estrutura interessante, o HyperLogLog.
+
+##### Nazaré
 
 Meu objetivo ao usar o Cuckoo Filter era criar um servidor de cache probabilistico, usando um protocolo conhecido e que me permitisse "trocar" o cache com uma operação apenas. Parece complicado mas a idéia é simples: Ao serializar um Cuckoo Filter com os dados que preciso consultar e gravar em disco, posso copiar com ferramentas simples entre containers. O tamanho do arquivo será pequeno, a eficiencia é alta e não preciso implementar nada mais complexo que "treinar" o filtro e distribui-lo. 
 
 Além disso usar um protocolo conhecido facilita a fazer um "drop in replacement" de serviços como Memcached e Redis sem ter que inventar uma semantica nova, só alterando o comportamento interno do servidor. É a minha versão de retrofit com componentes de cache e me ajuda a aprender por relacionar o comportamento com um sistema que já conheço. Este artificio já foi util ao trabalhar com sistemas legados em que eu não tinha outra saida a não ser clients que falavam o protocolo Memcached, por exemplo.
 
-##### Nazaré
-Desta parte em diante eu vou usar um projeto que desenvolvi [https://github.com/gleicon/nazare](https://github.com/gleicon/nazare) para mostrar estes algoritmos na pratica.
+Como mencionei antes, vou usar um projeto que desenvolvi [https://github.com/gleicon/nazare](https://github.com/gleicon/nazare) para mostrar estes algoritmos na pratica.
 
 
 
