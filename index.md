@@ -28,7 +28,7 @@ Meu primeiro contato com estrutura de dados probabilisticas foi provavelmente co
  
  Para ilustrar este fluxo vou usar a figura abaixo:
 
-![exemplo com memcached](cache_101_diagram.png)
+![exemplo com memcached](images/cache_101_diagram.png)
 
 Este fluxo é simples: Se imaginarmos um sistema em que uma usuária precisa acessar seu "Profile" guardado em um banco de dados para mostrar seus dados você pode acessar diretamente o banco em todas as requisições gerando I/O e uso de CPU concorrente com outras requisições a este banco. 
 
@@ -57,7 +57,7 @@ Dado um item a ser inserido, deve ser calculado seu Hash usando funções que v�
 
  Fica mais facil visualizar com um diagrama (fonte: [wikipedia](https://commons.wikimedia.org/wiki/File:Bloom_filter.svg))
  
- ![bloom filter](Bloom_filter.svg.png)
+ ![bloom filter](images/Bloom_filter.svg.png)
  
  Os elementos **{x,y,z}** foram adicionados no BitSet. As setas coloridas sao as funções de hash utilizadas para modificar os bits no BitSet (a lista de 0 e 1). O elemento **{w}** não está no BitSet.
  
@@ -264,35 +264,63 @@ Depois disso tento fazer um exemplo relacionando com uma estrutura conhecida, co
 
 Com isso vou melhorando meu entendimento e consigo interpretar melhor o artigo ou origem da estrutura. Eu mantenho alguns projetos que facilitam este entendimento e vou usar um deles para contextualizar as estruturas que vimos até agora e como uso outra estrutura interessante, o HyperLogLog.
 
-##### Nazaré
-
-Meu objetivo ao usar o Cuckoo Filter era criar um servidor de cache probabilistico, usando um protocolo conhecido e que me permitisse "trocar" o cache com uma operação apenas. Parece complicado mas a idéia é simples: Ao serializar um Cuckoo Filter com os dados que preciso consultar e gravar em disco, posso copiar com ferramentas simples entre containers. O tamanho do arquivo será pequeno, a eficiencia é alta e não preciso implementar nada mais complexo que "treinar" o filtro e distribui-lo. 
-
-Além disso usar um protocolo conhecido facilita a fazer um "drop in replacement" de serviços como Memcached e Redis sem ter que inventar uma semantica nova, só alterando o comportamento interno do servidor. É a minha maneira de relacionar algo novo com o comportamento de um sistema que já conheço. Este artificio já me foi util ao trabalhar com sistemas legados em que eu não tinha outra saida a não ser clients que falavam o protocolo Memcached, por exemplo.
-
-Como mencionei antes, vou usar um projeto que desenvolvi [https://github.com/gleicon/nazare](https://github.com/gleicon/nazare) para mostrar estes algoritmos na pratica.
-
-A estrutura deste serviço é simples. É um servidor que entende o protocolo do REDIS e implementa poucos dos seus comandos. 
-
-<diagrama do nazaré>
+##### Estudo de um caso real
 
 A motivação foi um estudo para armazenar dados de clickstream em um projeto que utilizava o Elasticsearch. O volume de dados armazenados era grande (mais de 40 trilhões de documentos) e a maioria das pesquisas eram contadores e sumarizações. 
 
 Em [https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-metrics-cardinality-aggregation.html](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-metrics-cardinality-aggregation.html) podemos ver que agregações são guardadas em uma estrutura chamada HyperLogLog++. A documentação fala sobre cardinalidade, o tamanho do conjunto de documentos e também sobre a precisão.
 
-Como o cluster estava grande e gerando custos e problemas, pensamos em utilizar o mesmo principio em outro servidor. O Redis oferece um tipo baseado em HyperLogLog [https://redis.io/commands/pfcount](https://redis.io/commands/pfcount) e com isso modificamos nosso código para testar.
+ Com o crescimento do produto a solução de guardar documentos no Elasticsearch e solicitar agregações ficou insustentável. O cluster estava grande, caro e os problemas aconteciam todo dia. Pensamos em pré-calcular algumas agregações, usar contadores e procurar uma alternativa com os mesmos principios para não causar um grande impacto na arquitetura existente. O Redis oferece um tipo baseado em HyperLogLog [https://redis.io/commands/pfcount](https://redis.io/commands/pfcount) e com isso modificamos nosso código para testar.
 
-A arquitetura do sistema era em streaming e a idéia é que contadores simples (um numero incremental) não ajudaria em consultas especificas de agregações em atributos como endereço IP de um click.
+A arquitetura do sistema era em streaming e a idéia é que contadores simples (um numero incremental) não ajudaria em consultas especificas de agregações em atributos como endereço IP de um click. Para ilustrar coloquei um diagrama abaixo:
 
-<arquitetura do sistema>
+![arquitetura antiga](images/product_old_arch.png)
 
-Com isso tentamos reproduzir dados de 90 dias em um Redis e nas primeiras tentativas vimos que o consumo de memória era grande. Em paralelo fiz um teste de usar uma implementação em Go do HyperLogLog para testar se conseguiria serializar os contadores e ter uma abordagem diferente do Redis, que quando persiste os dados em disco usa apenas um arquivo com extensão .rdb.
+Esta era a arquitetura antiga, incluindo ETLs e bancos de dados diversos. É um caso de feature creep interessante pois além de código bancos de dados foram acompanhando o crescimento do produto. Entre os repositórios de dados existiam Cassandra, S3, Elasticsearch e PGSQL. Os coletores de dados produziam mais de 15 mil documentos por segundo, e a retenção dos documentos variava de 15 a 90 dias. Para um volume pequeno de documentos (até um ou 2 bilhões) um cluster grande ainda era eficiente mas com mais de 40 trilhões e um volume alto de trafego de rede todos os elementos desta arquitetura eram afetados.
 
-A solução que tivemos foi hibrida, e utilizou um banco de dados relacionais, pois modificamos algumas características do produto mas eu continuei trabalhando naquele código e expandindo. Tive a idéia de conhecer melhor estas estruturas de dados e ter um Redis que não tivesse muita certeza das coisas, uma alusão aos trade-offs destas estruturas em favor de espaço e velocidade.
+![current arch](images/product_current_arch.png)
+Além da refatoração para remover alguns bancos de dados e o uso de eventos entre os produtos, a função do Elasticsearch foi inicialmente movida para um PGSQL como contadores. Essa arquitetura tem muitos elementos da Arquitetura Lambda.
+
+Inicialmente tentamos guardar dados de um determinado periodo em um Redis e nas primeiras modelagens vimos que o consumo de memória era grande, e o tempo para fazer _backfill_ (restaurar ou preencher uma nova instancia) era de dias. Em paralelo fiz um teste de usar uma implementação em Go do HyperLogLog para testar se conseguiria serializar os contadores e ter uma abordagem diferente do Redis, que quando persiste os dados em disco usa apenas um arquivo com extensão .rdb.
+
+A solução que implementamos após estas pesquisas foi hibrida, utilizou um banco de dados relacionais para contadores e um ElasticSearch bem menor com expiração de documentos pelo _curator_, modificamos algumas características do produto para refletir a margem de erro que existia. 
+
+Eu continuei trabalhando naquele código que simulava o Redis e expandindo os comandos. Era uma plataforma boa para conhecer melhor estas estruturas de dados probabilisticas e inventar um Redis que não tivesse muita certeza das coisas, uma alusão aos trade-offs destas estruturas em favor de espaço e velocidade.
+
+##### Nazaré
+
+Meu objetivo ao usar o Cuckoo Filter foi recriar este servidor de cache probabilistico, usando um protocolo conhecido e que me permitisse "trocar" o cache com uma operação apenas. Parece complicado mas a idéia é simples: Ao serializar um Cuckoo Filter com os dados que preciso consultar e gravar em disco, posso copiar com ferramentas simples entre containers. O tamanho do arquivo será pequeno, a eficiencia é alta e não preciso implementar nada mais complexo que "treinar" o filtro e distribui-lo. 
+
+Além disso usar um protocolo conhecido facilita a fazer um "drop in replacement" de serviços como Memcached e Redis sem ter que inventar uma semantica nova, só alterando o comportamento interno do servidor. É a minha maneira de relacionar algo novo com o comportamento de um sistema que já conheço. Este artificio já me ajudou ao trabalhar com sistemas legados em que eu não tinha outra saida a não ser clients que falavam o protocolo Memcached, por exemplo.
+
+Este experimento virou um projeto chamado Nazaré, que está em meu github [https://github.com/gleicon/nazare](https://github.com/gleicon/nazare) e utilizo mostrar estes algoritmos na pratica.
+
+A estrutura deste serviço é simples. É um servidor que entende o protocolo do Redis e implementa poucos dos seus comandos. Para cada grupo de comando escolhi um algoritmo probabilistico e como persistencia de dados utilizei o BadgerDB - [https://github.com/dgraph-io/badger](https://github.com/dgraph-io/badger) 
+
+Depois de algum tempo mantendo meu código de rede e o parsing dos comandos do Redis decidi usar uma biblioteca que implementa seu protocolo de maneira simples [https://github.com/tidwall/redcon](https://github.com/tidwall/redcon) 
+
+Para facilitar os testes eu separei o projeto em modulos que usei para criar um command line, _nazare-cli_, que tem os mesmos tipos apresentados no servidor. Para isso usei a biblioteca Cobra [https://github.com/spf13/cobra](https://github.com/spf13/cobra)
 
 
 
-#####     Servers em Go
+![diagrama da nazaré](images/nazare.png)
+
+###### Comandos Redis implementados
+
+| Comando   | Algoritmo     | Biblioteca                        | Backend  |
+|-----------|---------------|-----------------------------------|----------|
+| GET       | K/V Storage   | Armazenamento no BadgerDB         | BadgerDB |
+| SET       | K/V Storage   | Armazenamento no BadgerDB         | BadgerDB |
+| DEL       | K/V Storage   | Armazenamento no BadgerDB         | BadgerDB |
+| PFADD     | HyperLogLog   | github.com/axiomhq/hyperloglog    | BadgerDB |
+| PFCOUNT   | HyperLogLog   | github.com/axiomhq/hyperloglog    | BadgerDB |
+| SADD      | Cuckoo Filter | github.com/seiflotfy/cuckoofilter | BadgerDB |
+| SREM      | Cuckoo Filter | github.com/seiflotfy/cuckoofilter | BadgerDB |
+| SCARD     | Cuckoo Filter | github.com/seiflotfy/cuckoofilter | BadgerDB |
+| SISMEMBER | Cuckoo Filter | github.com/seiflotfy/cuckoofilter | BadgerDB |
+
+
+
 #####     Databases locais
 #####     Bonus: DDK
 
