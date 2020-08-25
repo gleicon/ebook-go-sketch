@@ -115,13 +115,20 @@ O código acima cria um Bloom Filter com 1000 posições e uma taxa de falsos po
 
 Esta biblioteca não implementa uma forma fácil de serialização de dados. Serializar dados é um modo de transformar uma estrutura de dados em um formato que pode ser guardado em um arquivo ou memória e recuperado posteriormente. Isso nos ajudaria a criar um Bloom Filter em um lugar e replica-lo para outro, como o Chrome fazia.
 
-Se você se interessar por mais detalhes sobre Bloom Filters, a página da [https://en.wikipedia.org/wiki/Bloom_filter](https://en.wikipedia.org/wiki/Bloom_filter) tem um conteúdo interessante, que explica o artigo original.
+Uma aplicação interessante de Bloom Filters é em banco de dados. O Cassandra utiliza Bloom Filters no caminho de leitura, pois consolida dados em disco com memória. Para evitar acesso ao disco e um full scan (procurar um dado em todas as tabelas em disco) foi implementado um Bloom Filter para criar uma barreira de acesso [https://cassandra.apache.org/doc/latest/operating/bloom_filters.html](https://cassandra.apache.org/doc/latest/operating/bloom_filters.html). 
+
+O LevelDB do Google, um banco de dados local chave/valor também utiliza Bloom Filters para mapear os blocos em disco em uma estrutura que chega a reduzir em 100 vezes a necessidade de I/O [https://github.com/google/leveldb/blob/master/doc/index.md](https://github.com/google/leveldb/blob/master/doc/index.md). 
+
+Se você se interessar por mais detalhes sobre Bloom Filters, a página da Wikipédia  [https://en.wikipedia.org/wiki/Bloom_filter](https://en.wikipedia.org/wiki/Bloom_filter) tem um conteúdo interessante, que explica o artigo original e detalha suas configurações. 
+
 
 #####     Cuckoo Filter
 
-Na mesma categoria que o Bloom Filter vamos ver o Cuckoo Filter, uma implementação das mesmas idéias que permite a remoção de um elemento e implementa pequenas mudanças que ajudam a diminuir os falsos positivos. Existem implementações de Bloom Filter que permitem remover itens também com uma troca de eficiencia ou espaço ocupado.
+O Cuckoo Filter vive na mesma categoria que o Bloom Filter, é uma implementação das mesmas idéias mas que permite a remoção de um elemento e implementa pequenas mudanças que ajudam a diminuir os falsos positivos. Existem implementações de Bloom Filter que permitem remover itens também com uma troca de eficiencia ou espaço ocupado. 
 
-Este artigo https://www.cs.cmu.edu/~dga/papers/cuckoo-conext2014.pdf explica bem como o Cuckoo Filter implementa suas funções de hash e correção de erros. Como no exemplo anterior vou usar uma biblioteca [https://github.com/seiflotfy/cuckoofilter](https://github.com/seiflotfy/cuckoofilter). Você pode rodar o exemplo em https://play.golang.org/p/zVIbXlbgSMl
+O Bloom Filter é mais eficiente em espaço e busca para largos volumes de dados mas as aplicações são semelhantes, voc6e poderia trocar um pelo outro. A vantagem é a remoção de elementos e a melhora dos falsos positivos, que aumentam no Bloom Filter conforme mais dados são armazenados.
+
+Este artigo https://www.cs.cmu.edu/~dga/papers/cuckoo-conext2014.pdf explica como o Cuckoo Filter implementa suas funções de hash e correção de erros. Como no exemplo anterior vou usar uma biblioteca [https://github.com/seiflotfy/cuckoofilter](https://github.com/seiflotfy/cuckoofilter). Você pode rodar o exemplo em https://play.golang.org/p/zVIbXlbgSMl
 
 ```
 package main
@@ -237,6 +244,12 @@ func main() {
 
 Eu não gravei o filter em um arquivo, mas poderia ter feito com poucas modificações. Na parte final do programa acima usei a função Decode() do tipo _cuckoo.Filter_ para gerar um "dump" que pode ser reconstruido. Em Go poderiamos usar um protocolo de serialização como Gob ou binary diretamente também, implementando as funções no tipo.
 
+Minha intenção foi comparar os usos e demonstrar como a remoção de um elemento deste filter funciona. Na saida do programa você pode ver o tamanho da estrutura de dados, sabendo que mesmo que adicionasse mais sites, este tamanho não mudaria.
+
+
+#####     HyperLogLog
+
+
 ##### O que procurar em uma biblioteca?
 
 Neste ponto quero explicar o que procuro em uma biblioteca que oferece este tipo de estrutura de dados.
@@ -255,15 +268,31 @@ Com isso vou melhorando meu entendimento e consigo interpretar melhor o artigo o
 
 Meu objetivo ao usar o Cuckoo Filter era criar um servidor de cache probabilistico, usando um protocolo conhecido e que me permitisse "trocar" o cache com uma operação apenas. Parece complicado mas a idéia é simples: Ao serializar um Cuckoo Filter com os dados que preciso consultar e gravar em disco, posso copiar com ferramentas simples entre containers. O tamanho do arquivo será pequeno, a eficiencia é alta e não preciso implementar nada mais complexo que "treinar" o filtro e distribui-lo. 
 
-Além disso usar um protocolo conhecido facilita a fazer um "drop in replacement" de serviços como Memcached e Redis sem ter que inventar uma semantica nova, só alterando o comportamento interno do servidor. É a minha versão de retrofit com componentes de cache e me ajuda a aprender por relacionar o comportamento com um sistema que já conheço. Este artificio já foi util ao trabalhar com sistemas legados em que eu não tinha outra saida a não ser clients que falavam o protocolo Memcached, por exemplo.
+Além disso usar um protocolo conhecido facilita a fazer um "drop in replacement" de serviços como Memcached e Redis sem ter que inventar uma semantica nova, só alterando o comportamento interno do servidor. É a minha maneira de relacionar algo novo com o comportamento de um sistema que já conheço. Este artificio já me foi util ao trabalhar com sistemas legados em que eu não tinha outra saida a não ser clients que falavam o protocolo Memcached, por exemplo.
 
 Como mencionei antes, vou usar um projeto que desenvolvi [https://github.com/gleicon/nazare](https://github.com/gleicon/nazare) para mostrar estes algoritmos na pratica.
 
+A estrutura deste serviço é simples. É um servidor que entende o protocolo do REDIS e implementa poucos dos seus comandos. 
+
+<diagrama do nazaré>
+
+A motivação foi um estudo para armazenar dados de clickstream em um projeto que utilizava o Elasticsearch. O volume de dados armazenados era grande (mais de 40 trilhões de documentos) e a maioria das pesquisas eram contadores e sumarizações. 
+
+Em [https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-metrics-cardinality-aggregation.html](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-metrics-cardinality-aggregation.html) podemos ver que agregações são guardadas em uma estrutura chamada HyperLogLog++. A documentação fala sobre cardinalidade, o tamanho do conjunto de documentos e também sobre a precisão.
+
+Como o cluster estava grande e gerando custos e problemas, pensamos em utilizar o mesmo principio em outro servidor. O Redis oferece um tipo baseado em HyperLogLog [https://redis.io/commands/pfcount](https://redis.io/commands/pfcount) e com isso modificamos nosso código para testar.
+
+A arquitetura do sistema era em streaming e a idéia é que contadores simples (um numero incremental) não ajudaria em consultas especificas de agregações em atributos como endereço IP de um click.
+
+<arquitetura do sistema>
+
+Com isso tentamos reproduzir dados de 90 dias em um Redis e nas primeiras tentativas vimos que o consumo de memória era grande. Em paralelo fiz um teste de usar uma implementação em Go do HyperLogLog para testar se conseguiria serializar os contadores e ter uma abordagem diferente do Redis, que quando persiste os dados em disco usa apenas um arquivo com extensão .rdb.
+
+A solução que tivemos foi hibrida, e utilizou um banco de dados relacionais, pois modificamos algumas características do produto mas eu continuei trabalhando naquele código e expandindo. Tive a idéia de conhecer melhor estas estruturas de dados e ter um Redis que não tivesse muita certeza das coisas, uma alusão aos trade-offs destas estruturas em favor de espaço e velocidade.
 
 
 
 #####     Servers em Go
 #####     Databases locais
-#####     HyperLogLog
 #####     Bonus: DDK
 
