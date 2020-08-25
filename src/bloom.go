@@ -26,4 +26,5 @@ func main() {
 
 	testAndReport("https://lerolero.com")
 	testAndReport("https://badsite.com")
+
 }

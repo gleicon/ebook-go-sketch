@@ -44,7 +44,7 @@ A lista poderia ficar - e ficou - maior que o que a memória de uma maquina pode
 
 ##### Bloom Filter
 
-Bloom filter é uma estrutura de dado probabilistica que diz a probabilidade de um membro pertencer a um conjunto. Para entender o bloom filter precisamos entender seus componentes:
+Bloom filter é uma estrutura de dado probabilistica de baixo consumo de espaço e alta velocidade, que deixa testar a probabilidade de um membro pertencer a um conjunto. Para entender o bloom filter precisamos entender seus componentes:
 
 ###### O que é um conjunto (Set)
 
@@ -65,12 +65,16 @@ Dado um item a ser inserido, deve ser calculado seu Hash usando funções que v�
  
  Esta é uma característica do Bloom Filter. Ele pode dar falsos positivos (afirmar que um item existe mas ele não ter sido inserido) mas nunca dá falsos negativos. A chance de falso positivos aumenta conforme aumenta o número de elementos adicionados ao Bloom Filter.
  
- Esta caracteristica se junta à velocidade e economia de espaço como pontos de escolha do algoritmo. A tabela abaixo compara Bloom Filter com um Hash/Dictionary/Map nestas caracteristicas:
+ Esta caracteristica se junta à velocidade e economia de espaço como pontos de escolha do algoritmo. O Bloom Filter não permite que um elemento seja "Deletado".
+
+A tabela abaixo compara Bloom Filter com um Hash/Dictionary/Map nestas caracteristicas:
  
-| Tipo         | Velocidade                                  | Guarda todos os valores (uso de espaço)                          | Falso Positivos | Falso Negativos |
-|--------------|---------------------------------------------|------------------------------------------------------------------|-----------------|-----------------|
-| Hash         | Pior caso tem que percorrer todas as chaves | sim                                                              | não             | não             |
-| Bloom Filter | Pior caso é o tamanho do bitset             | Guarda uma representação menor dos valores usando hash functions | sim             | não             |
+| Tipo         | Velocidade                                   | Guarda todos os valores (uso de espaço)                  | Falso Positivos | Falso Negativos | Deleta Itens ? |
+|--------------|----------------------------------------------|----------------------------------------------------------|-----------------|-----------------|----------------|
+| Hash         | Pior caso tem que percorrer todas as chaves  | sim                                                      | não             | não             | sim            |
+| Bloom Filter | Pior caso é relacionado ao tamanho do BitSet | Usa a representação menor dos valores com hash functions | sim             | não             | não            |
+|              |                                              |                                                          |                 |                 |                |
+
 Vamos usar uma biblioteca para testar o Bloom Filter. Escolhi a biblioteca do site YourBasic pois é simples de usar e visualizar a implementação. O código fonte da biblioteca está em https://github.com/yourbasic/bloom. O playground para este codigo fica em https://play.golang.org/p/tDnQrVV3xBS
 
  ```
@@ -107,11 +111,19 @@ func main() {
 
  ```
 
+O código acima cria um Bloom Filter com 1000 posições e uma taxa de falsos positivos estimada em 1 em 20. Este número é utilizado para calcular quantos _lookups_(passadas ou buscas) serão feitas no bitset ao adicionar ou testar um item. É importante pois junto com as funções de Hash e o tamanho do BitSet ajuda a controlar a taxa de falso positivos.
+
+Esta biblioteca não implementa uma forma fácil de serialização de dados. Serializar dados é um modo de transformar uma estrutura de dados em um formato que pode ser guardado em um arquivo ou memória e recuperado posteriormente. Isso nos ajudaria a criar um Bloom Filter em um lugar e replica-lo para outro, como o Chrome fazia.
+
+Se você se interessar por mais detalhes sobre Bloom Filters, a página da [https://en.wikipedia.org/wiki/Bloom_filter](https://en.wikipedia.org/wiki/Bloom_filter) tem um conteúdo interessante, que explica o artigo original.
+
+#####     Cuckoo Filter
+
+Na mesma categoria que o Bloom Filter vamos ver o Cuckoo Filter, uma implementação das mesmas idéias que permite a remoção de um elemento e implementa pequenas mudanças que ajudam a diminuir os falsos positivos.
+
 
 #####     Servers em Go
 #####     Databases locais
-#####     Bloom Filter
-#####     Cuckoo Filter
 #####     HyperLogLog
 #####     Bonus: DDK
 
