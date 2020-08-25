@@ -32,15 +32,15 @@ Meu primeiro contato com estrutura de dados probabilisticas foi provavelmente co
 
 Este fluxo é simples: Se imaginarmos um sistema em que uma usuária precisa acessar seu "Profile" guardado em um banco de dados para mostrar seus dados você pode acessar diretamente o banco em todas as requisições gerando I/O e uso de CPU concorrente com outras requisições a este banco. 
 
-Se analisarmos o padrão das solicitações a este banco, vai notar que o dado nele não muda a todo o instante. Com uma modificação no fluxo de acesso você pode guardar a solicitação a uma requisição em um sistema de cache e da proxima vez servi-lo da memória. Isso exige que os dados "expirem" ou se invalidem automaticamente para garantir que modificações vao ser vistas (troca de sobrenome ou endereço por exemplo).
+Se analisarmos o padrão das solicitações a este banco de dados e como suas informações são atualizadas, veremos que nem todas as tabelas mudam em conjunto. Se modificarmos o fluxo de acesso podemos guardar a resposta a uma requisição em um sistema de cache e da proxima vez servi-lo da memória. Isso exige que os dados "expirem" ou se invalidem automaticamente para garantir que modificações vao ser vistas (troca de sobrenome ou endereço por exemplo).
 
-Esta modificação é apenas verificar se a resposta a uma requisição existe no cache. Isso geralmente é feito usando o modelo "K/V - Key Value" (Chave/Valor). É a assinatura de uma estrutura de dados do tipo Hash ou Dicionário. Você pode usar a query inteira como Chave, e receber seu resultado como Valor.
+Esta modificação adiciona um componente novo ao sistema e intercepta as requisições para verificar se a resposta a uma requisição já existe no cache. Isso é feito usando o modelo "K/V - Key Value" (Chave/Valor). Esta é a assinatura de uma estrutura de dados do tipo Hash ou Dicionário. Você pode usar a query como Chave, e receber seu resultado como Valor.
 
-Esta explicação é importante para voltarmos ao Bloom Filter. No Chrome existem vários caches mas um deles pode crescer rápido: o do Safe Browsing. Safe Browsing é uma lista que o Google mantém baseado em duas pesquisas e reclamações recebidas sobre sites inseguros. Para que o browser não tivesse que consultar um serviço web a todo momento, com implicações de performance e segurança, foi decidido que esta lista poderia ser atualizada por download de tempos em tempos.
+Esta explicação é importante para voltarmos ao Bloom Filter e ao exemplo do SafeBrowsing. O Chrome tem vários caches que crescem em "velocidades" distintas. Safe Browsing é uma lista que o Google mantém baseado em duas pesquisas e reclamações recebidas sobre sites inseguros. Para que o browser não tivesse que consultar um serviço web a todo momento, com implicações de performance e segurança, foi decidido que esta lista poderia ser atualizada por download de tempos em tempos.
 
-A lista poderia ficar - e ficou - maior que o que a memória de uma maquina poderia guardar, então guarda-la em um arquivo para consulta rápida foi considerado. Mas guardar as URLs inteiras seria um problema pelo tamanho que elas podem ter. Foi decidido guardar um Hash de cada URL, ou seja aplicada uma função em cada URL que mapearia um texto a um valor de tamanho fixo. Se usarmos os dados do [HTTP Archive](https://httparchive.org/reports/state-of-the-web) e colocassemos 25% das URLs existentes nesta lista, ficaria complexo conferir a cada request se uma URL esta na lista de URLs do safe browsing.
+A lista poderia ficar - e ficou - maior que o que a memória de um processo poderia guardar, então guarda-la em um arquivo para consulta rápida foi considerado. Mas guardar as URLs inteiras seria um problema pelo tamanho que elas podem ter. Foi decidido guardar um Hash de cada URL, ou seja aplicada uma função em cada URL que mapearia um texto a um valor de tamanho fixo. Se usarmos os dados do [HTTP Archive](https://httparchive.org/reports/state-of-the-web) e colocassemos 25% das URLs existentes nesta lista, ficaria complexo conferir a cada request se uma URL esta na lista de URLs do safe browsing.
 
-Á epoca foi decidido colocar esta lista em uma estrutura chamada Bloom Filter que depois mudaria para outra estrutura por conta do tamanho em disco e outras limitações descritas no link acima. Mas vamos focar no Bloom Filter.
+Á epoca foi decidido colocar esta lista em uma estrutura chamada Bloom Filter que depois mudou para outra estrutura por conta do tamanho em disco e outras limitações descritas no link acima. Mas vamos focar no Bloom Filter.
 
 ##### Bloom Filter
 
@@ -119,7 +119,134 @@ Se você se interessar por mais detalhes sobre Bloom Filters, a página da [http
 
 #####     Cuckoo Filter
 
-Na mesma categoria que o Bloom Filter vamos ver o Cuckoo Filter, uma implementação das mesmas idéias que permite a remoção de um elemento e implementa pequenas mudanças que ajudam a diminuir os falsos positivos.
+Na mesma categoria que o Bloom Filter vamos ver o Cuckoo Filter, uma implementação das mesmas idéias que permite a remoção de um elemento e implementa pequenas mudanças que ajudam a diminuir os falsos positivos. Existem implementações de Bloom Filter que permitem remover itens também com uma troca de eficiencia ou espaço ocupado.
+
+Este artigo https://www.cs.cmu.edu/~dga/papers/cuckoo-conext2014.pdf explica bem como o Cuckoo Filter implementa suas funções de hash e correção de erros. Como no exemplo anterior vou usar uma biblioteca [https://github.com/seiflotfy/cuckoofilter](https://github.com/seiflotfy/cuckoofilter). Você pode rodar o exemplo em https://play.golang.org/p/zVIbXlbgSMl
+
+```
+package main
+
+import (
+	"fmt"
+
+	cuckoo "github.com/seiflotfy/cuckoofilter"
+)
+
+var safeBrowsingList *cuckoo.Filter
+
+func testAndReport(url string) {
+	uu := []byte(url)
+	if safeBrowsingList.Lookup(uu) {
+		fmt.Println(url, "is not safe")
+	} else {
+		fmt.Println(url, "seems safe")
+	}
+}
+
+func main() {
+	safeBrowsingList = cuckoo.NewFilter(1000)
+	safeBrowsingList.InsertUnique([]byte("https://badsite.com"))
+	safeBrowsingList.InsertUnique([]byte("https://anotherbadsite.com"))
+
+	testAndReport("https://badsite.com")
+	testAndReport("https://anotherbadsite.com")
+	testAndReport("https://lerolero.com")
+
+	count := safeBrowsingList.Count()
+	fmt.Printf("Items: %d\n", count)
+
+	// Delete a string (and it a miss)
+	safeBrowsingList.Delete([]byte("hello"))
+
+	count = safeBrowsingList.Count()
+	fmt.Printf("Items: %d\n", count)
+
+	// Delete a string (a hit)
+	safeBrowsingList.Delete([]byte("https://badsite.com"))
+
+	count = safeBrowsingList.Count()
+	fmt.Printf("Items: %d\n", count)
+
+	safeBrowsingList.Reset() // reset
+
+	count = safeBrowsingList.Count()
+	fmt.Printf("Items: %d\n", count)
+}
+
+```
+
+O código é parecido com o que usei para mostrar o Bloom Filter, com a contagem de elementos no Cuckoo Filter entre as operações e também com a operação de DELETE de um item. Esta biblioteca fornece funções de serialização/deserialização também. O código é bem interessante de ler.
+
+Posso alterar meu código para guardar o filtro e carregar depois com as funções **Encode** e **Decode** https://play.golang.org/p/urTVjJX6xHP
+
+```
+package main
+
+import (
+	"fmt"
+
+	cuckoo "github.com/seiflotfy/cuckoofilter"
+)
+
+var safeBrowsingList *cuckoo.Filter
+
+func testAndReport(filter *cuckoo.Filter, url string) {
+	uu := []byte(url)
+	if filter.Lookup(uu) {
+		fmt.Println(url, "is not safe")
+	} else {
+		fmt.Println(url, "seems safe")
+	}
+}
+
+func main() {
+	safeBrowsingList = cuckoo.NewFilter(1000)
+	safeBrowsingList.InsertUnique([]byte("https://badsite.com"))
+	safeBrowsingList.InsertUnique([]byte("https://anotherbadsite.com"))
+
+	testAndReport(safeBrowsingList, "https://badsite.com")
+	testAndReport(safeBrowsingList, "https://anotherbadsite.com")
+	testAndReport(safeBrowsingList, "https://lerolero.com")
+
+	count := safeBrowsingList.Count()
+	fmt.Printf("Items: %d\n", count)
+
+	// Delete a string (and it a miss)
+	safeBrowsingList.Delete([]byte("hello"))
+
+	count = safeBrowsingList.Count()
+	fmt.Printf("Items: %d\n", count)
+
+	fmt.Println("Encoding")
+
+	serFilter := safeBrowsingList.Encode()
+
+	fmt.Printf("Serialized: % x\n", serFilter)
+
+	BackupsafeBrowsingList, _ := cuckoo.Decode(serFilter)
+
+	count = BackupsafeBrowsingList.Count()
+	fmt.Printf("Items: %d\n", count)
+
+	testAndReport(BackupsafeBrowsingList, "https://badsite.com")
+	testAndReport(BackupsafeBrowsingList, "https://anotherbadsite.com")
+	testAndReport(BackupsafeBrowsingList, "https://lerolero.com")
+}
+
+```
+
+
+
+O que procurar em uma biblioteca?
+
+Meu objetivo ao usar o Cuckoo Filter era criar um servidor de cache probabilistico, usando um protocolo conhecido e que me permitisse "trocar" o cache com uma operação apenas. Parece complicado mas a idéia é simples: Ao serializar um Cuckoo Filter com os dados que preciso consultar e gravar em disco, posso copiar com ferramentas simples entre containers. O tamanho do arquivo será pequeno, a eficiencia é alta e não preciso implementar nada mais complexo que "treinar" o filtro e distribui-lo. 
+
+Além disso usar um protocolo conhecido facilita a fazer um "drop in replacement" de serviços como Memcached e Redis sem ter que inventar uma semantica nova, só alterando o comportamento interno do servidor. É a minha versão de retrofit com componentes de cache e me ajuda a aprender por relacionar o comportamento com um sistema que já conheço. Este artificio já foi util ao trabalhar com sistemas legados em que eu não tinha outra saida a não ser clients que falavam o protocolo Memcached, por exemplo.
+
+##### Nazaré
+Desta parte em diante eu vou usar um projeto que desenvolvi [https://github.com/gleicon/nazare](https://github.com/gleicon/nazare) para mostrar estes algoritmos na pratica.
+
+
 
 
 #####     Servers em Go
