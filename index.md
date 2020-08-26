@@ -32,7 +32,7 @@ Meu primeiro contato com estrutura de dados probabilisticas foi provavelmente co
 
 Este fluxo é simples: Se imaginarmos um sistema em que uma usuária precisa acessar seu "Profile" guardado em um banco de dados para mostrar seus dados você pode acessar diretamente o banco em todas as requisições gerando I/O e uso de CPU concorrente com outras requisições a este banco.
 
-Se analisarmos o padrão das solicitações a este banco de dados e como suas informações são atualizadas, veremos que nem todas as tabelas mudam em conjunto. Se modificarmos o fluxo de acesso podemos guardar a resposta a uma requisição em um sistema de cache e da proxima vez servi-lo da memória. Isso exige que os dados "expirem" ou se invalidem automaticamente para garantir que modificações vejam vistas (troca de sobrenome ou endereço por exemplo).
+Se analisarmos o padrão das solicitações a este banco de dados e como suas informações são atualizadas, veremos que nem todas as tabelas mudam em conjunto. Se modificarmos o fluxo de acesso podemos guardar a resposta a uma requisição em um sistema de cache e da proxima vez servi-lo da memória. Isso exige que os dados "expirem" ou se invalidem automaticamente para garantir que modificações sejam vistas (troca de sobrenome ou endereço por exemplo).
 
 Esta modificação adiciona um componente novo ao sistema e intercepta as requisições para verificar se a resposta a uma requisição já existe no cache. Isso é feito usando o modelo "K/V - Key Value" (Chave/Valor). Esta é a assinatura de uma estrutura de dados do tipo Hash ou Dicionário. Você pode usar a query como Chave, e receber seu resultado como Valor.
 
@@ -354,9 +354,11 @@ HLL total size:	 32776
 Map total size:	 10000000
 ```
 
-Conforme mais itens são adicionados no HLL, o erro ao estimar o tamanho aumenta levemente. Com 10MM de itens a diferença é de 0.3025% em relação ao slice com todos os itens. Se compararmos o tamanho em bytes, o HLL tem 32776 bytes depois de serializado. O slice de booleans tem 10MM itens * 1byte, quase 10MB.
+Quanto mais itens são adicionados no HLL, aumenta o erro ao estimar o tamanho. Com 10MM de itens a diferença é de 0.3025% em relação ao slice com todos os itens. Se compararmos o tamanho em bytes, o HLL tem 32776 bytes depois de serializado. O slice de booleans tem 10MM itens * 1byte, quase 10MB.
 
 Para estimar _Visitantes Unicos_ baseados em endereço IP ou outra forma de fingerprint em um sistema como de Analytics este é um trade-off interessante. Como mencionei acima, o Elasticsearch utiliza um HLL configuravel para guardar agregações salvando espaço de disco, memoria e banda de rede em troca de um tradeoff configuravel de precisão.
+
+A função de _Merge_ de dois ou mais HLL é interessante. Você pode coletar dados de stream distintos, sem usar um lock ou banco centralizado e periodicamente juntar (merge) os HLL para ter um resultando que contem a estimativa de todos os itens vistos em instancias distintas.
 
 
 #### O que procurar em uma biblioteca?
@@ -430,7 +432,181 @@ Para facilitar os testes eu separei o projeto em modulos que usei para criar um 
 | SCARD     | Cuckoo Filter | github.com/seiflotfy/cuckoofilter | BadgerDB |
 | SISMEMBER | Cuckoo Filter | github.com/seiflotfy/cuckoofilter | BadgerDB |
 
+O código é organizado por modulos: server, datalayer, counters, sets e db. Cada modulo entende uma parte do modelo de dados. Eu usei as funções de serialização de cada biblioteca para gerar um byte slice e guardar no BadgerDB como valor de uma chave: [https://github.com/gleicon/nazare/blob/master/counters/hllcounters.go#L117-L153](https://github.com/gleicon/nazare/blob/master/counters/hllcounters.go#L117-L153)
 
+
+```
+/*
+IncrementCounter increments <<name>> counter by adding <<item&gt>> to it.
+The naive implementation locks(), get, increment and set
+The counter and its lock are automatically created if it is empty.
+*/
+func (hc *HLLCounters) IncrementCounter(key []byte, item []byte) error {
+	if hc.hllrwlocks[string(key)] == nil {
+		hc.hllrwlocks[string(key)] = new(sync.RWMutex)
+	}
+
+	localMutex := hc.hllrwlocks[string(key)]
+	localMutex.Lock()
+	defer localMutex.Unlock()
+
+	cc, _ := hc.datastorage.Get([]byte(key))
+
+	hll := hyperloglog.New16()
+	if cc != nil {
+		if err := hll.UnmarshalBinary(cc); err != nil {
+			return err
+		}
+	} else {
+		hc.stats.ActiveCounters++
+	}
+
+	hll.Insert(item)
+	var bd []byte
+	var err error
+
+	if bd, err = hll.MarshalBinary(); err != nil {
+		return err
+	}
+
+	if err = hc.datastorage.Add([]byte(key), bd); err != nil {
+		return err
+	}
+	return nil
+}
+```
+
+O mesmo padrão é utilizado para Sets com Cuckoo Filter [https://github.com/gleicon/nazare/blob/master/sets/cuckoo.go#L48-L82](https://github.com/gleicon/nazare/blob/master/sets/cuckoo.go#L48-L82)
+
+```
+
+
+/*
+SAdd a member to a set
+*/
+func (ckset *CkSet) SAdd(key, member []byte) error {
+	var sts *cuckoo.Filter
+
+	localMutex := ckset.lockKey(key)
+	localMutex.Lock()
+	defer localMutex.Unlock()
+
+	value, err := ckset.datastorage.Get(key)
+	if err != nil {
+		return errors.New("Error fetching set: " + string(key))
+	}
+	if value == nil {
+		// tunable cuckoo size
+		sts = cuckoo.NewFilter(1024 * 1024)
+	} else {
+		sts, err = cuckoo.Decode(value)
+		if err != nil {
+			return errors.New("Error decoding filter set: " + string(key))
+		}
+	}
+	ok := sts.InsertUnique(member)
+	if !ok {
+		return errors.New("Error inserting at cuckoo set, key: " + string(key))
+	}
+
+	err = ckset.datastorage.Add(key, sts.Encode())
+	if err != nil {
+		return errors.New("Error inserting at datastore, key: " + string(key))
+	}
+
+	return nil
+}
+
+```
+
+Nos dois casos a abstração do banco de dados (`datastorage`) conhece como armazenar o valor em uma chave. Se eu optasse por trocar o BadgerDB por outro banco, teria que implementar o método seguindo a interface em [https://github.com/gleicon/nazare/blob/master/db/datastore.go](https://github.com/gleicon/nazare/blob/master/db/datastore.go)
+
+```
+package db
+/*
+Datastorage describes the generic interface to store counters.
+*/
+type Datastorage interface { 
+    Add([]byte, []byte) error
+    Get([]byte) ([]byte, error)
+    Delete(\[\]byte) (bool, error)
+    Close()
+    Flush()
+}
+```
+
+A implementação da interface de Add para o BadgerDB em [https://github.com/gleicon/nazare/blob/master/db/badger.go#L61-L81](https://github.com/gleicon/nazare/blob/master/db/badger.go#L61-L81)
+
+```
+/*
+Add data
+*/
+func (bds *BadgerDatastorage) Add(key, value []byte) error {
+	var vals []byte
+	if bds.compression {
+		vals := snappy.Encode(nil, value)
+
+		if vals == nil {
+			return errors.New("Error compressing payload")
+		}
+	} else {
+		vals = value
+	}
+
+	err := bds.db.Update(func(txn *badger.Txn) error {
+		err := txn.Set([]byte(key), vals)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	return err
+}
+```
+
+Esta implementação de datalayer usando o BadgerDB permite compressão dos dados com Snappy. No mesmo package tem a implementação em memória do datalayer [https://github.com/gleicon/nazare/blob/master/db/mapds.go](https://github.com/gleicon/nazare/blob/master/db/mapds.go)
+
+```
+/*
+Add a new key
+*/
+func (hds *HLLDatastorage) Add(key []byte, payload []byte) error {
+	hds.bytemap[string(key)] = payload
+	return nil
+}
+```
+
+As implementações são independentes das escolhas de tipos de dados em camadas superiores. As mesmas implementações são usadas para a versão command line [https://github.com/gleicon/nazare/blob/master/nazare-cli/cmd/root.go#L43-L52](https://github.com/gleicon/nazare/blob/master/nazare-cli/cmd/root.go#L43-L52)
+
+```
+func init() {
+
+	cobra.OnInitialize(initConfig)
+
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.nazare-cli.yaml)")
+
+	dbPath := rootCmd.Flags().StringP("database", "b", "nazare.db", "full database path and name. defaults to nazare.db at local dir")
+	ldb = datalayer.NewLocalDB()
+	ldb.Start(*dbPath)
+}
+
+
+```
+
+E assim no comando de adicionar um elemento a um cuckoo filter [https://github.com/gleicon/nazare/blob/master/nazare-cli/cmd/sets.go#L52-L59](https://github.com/gleicon/nazare/blob/master/nazare-cli/cmd/sets.go#L52-L59) 
+
+```
+if addFlag {
+		if len(args) < 2 {
+			return errors.New("Invalid parameters, Add requires <setname> <item>")
+		}
+		if err = ldb.LocalSets.SAdd([]byte(args[0]), []byte(args[1])); err != nil {
+			return errors.Unwrap(fmt.Errorf("Error adding to set: %w", err))
+		}
+	}
+```
+
+Adicionar uma nova estrutura no datalayer permite expo-la para o servidor ou command line sem grandes mudanças na camada de command parsing ou storage.
 
 #### Databases locais
 #### Bonus: DDK
