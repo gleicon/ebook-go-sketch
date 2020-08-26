@@ -1,17 +1,17 @@
-### Estruturas de dados probabilisticas (Sketch Data Structures) e Go
+### Estruturas de dados probabilísticas (Sketch Data Structures) e Go
 
 #### Introdução
 Este ebook é um trabalho em progresso constante. Eu vou adicionando e modificando de acordo com meu aprendizado e também com novidades que encontro. A minha intenção é ter um guia rápido em português que possa ajudar a resolver problemas de engenharia de dados com Go.
 
-As anotações começaram como meu diário de uso de Go para serviços de uso bem especifico: contar, acumular e registrar grandes volumes de dados em alta velocidade. Estes problemas são descrito há muito tempo e aparece de várias formas: brokers de mensagens, servidores de coleta de dados, pixel de tracking para trafego web, coleta de metricas em dispositivos móveis e monitoração de serviços.
+As anotações começaram como meu diário de uso de Go para serviços de uso bem especifico: contar, acumular e registrar grandes volumes de dados em alta velocidade. Estes problemas são descritos há muito tempo e aparecem de várias formas: brokers de mensagens, servidores de coleta de dados, pixel de tracking para trafego web, coleta de metricas em dispositivos móveis, monitoração de serviços, entre outros.
 
-Meu primeiro contato com Go foi em um curso em 2011 na OSCON, uma conferencia da OReilly. Eu havia lido sobre a linguagem e fiquei interessado na simplicidade. Nesta época, eu programava em Python usando o framework Twisted para fazer meus servidores. "Programava" é um eufemismo para o pouco que conseguia fazer entre outras atribuições. Após este curso eu tentei portar alguns projetos para Go sem muito compromisso. 
+Meu primeiro contato com Go foi em um curso em 2011 na OSCON, uma conferencia da O'Reilly. Eu havia lido sobre a linguagem e fiquei interessado na simplicidade. Nesta época, eu programava em Python usando o framework Twisted para fazer meus servidores. "Programava" é um eufemismo para o pouco que conseguia fazer entre outras atribuições. Após este curso eu tentei portar alguns projetos para Go sem muito compromisso.
 
 Meu jeito de aprender uma linguagem ou framework é fazer uma versão simples do projeto [Memcached](https://github.com/gleicon/beano) e do meu projeto [RESTMQ](https://github.com/gleicon/restmq), para entender como fazer um servidor, como atender requisições, como guardar dados e serialização. Eles foram bem mas continuei sem compromisso até que o meu time resolveu um problema de roteamento de email em larga escala e volume em Go. Este projeto me chamou a atenção pela simplicidade e escalabilidade. Na época usando maquinas fisicas a redução de uso de recursos foi impressionante.
 
-Comecei a investir mais tempo ajudando em alguns projetos opensource para pegar o jeito da linguagem, comecei a portar ou criar pequenos projetos e tenho usado Go desde então 
+Comecei a investir mais tempo ajudando em alguns projetos opensource para pegar o jeito da linguagem, comecei a portar ou criar pequenos projetos e tenho usado Go desde então.
 
-O mesmo aconteceu com estruturas de dados probabilisticas. Eu vou contar como tive contato com elas, minha motivação e explica-las de uma forma simples com referências para quem se interessar em profundidade, para manter este livro breve.
+O mesmo aconteceu com estruturas de dados probabilísticas. Eu vou contar como tive contato com elas, minha motivação e explica-las de uma forma simples com referências para quem se interessar em profundidade, para manter este livro breve.
 
 Nesta jornada eu tive vários momentos que só posso descrever como "_solução a procura de um problema_": as vezes lia um artigo ou via um exemplo de código e revisava meus projetos e o trabalho a procura de uma oportunidade de usar a idéia.
 
@@ -24,15 +24,15 @@ Meu primeiro contato com estrutura de dados probabilisticas foi provavelmente co
 
  A idéia de ter um "cache" (estrutura que armazena valores pré calculados em memória ou disco local) não é nova, frameworks e aplicações fazem isso há algum tempo. O projeto SQLLite é usado pelo Chrome desta maneira e para a maioria das aplicações móveis. 
  
- Existem servidores como Memcached e Redis que provêm o serviço de guardar esta estrutura de forma acessivel para mais de uma instancia da mesma aplicação, que é essencialmente um servidor com um "Map" (dicionario) que disponibiliza suas funções de Get e Set pela rede usando um protocolo de comunicação definido.
+ Existem servidores como Memcached e Redis que provêm o serviço de guardar esta estrutura de forma acessivel para mais de uma instância da mesma aplicação, que é essencialmente um servidor com um "Map" (dicionario) que disponibiliza suas funções de Get e Set pela rede usando um protocolo de comunicação definido.
  
  Para ilustrar este fluxo vou usar a figura abaixo:
 
 ![exemplo com memcached](images/cache_101_diagram.png)
 
-Este fluxo é simples: Se imaginarmos um sistema em que uma usuária precisa acessar seu "Profile" guardado em um banco de dados para mostrar seus dados você pode acessar diretamente o banco em todas as requisições gerando I/O e uso de CPU concorrente com outras requisições a este banco. 
+Este fluxo é simples: Se imaginarmos um sistema em que uma usuária precisa acessar seu "Profile" guardado em um banco de dados para mostrar seus dados você pode acessar diretamente o banco em todas as requisições gerando I/O e uso de CPU concorrente com outras requisições a este banco.
 
-Se analisarmos o padrão das solicitações a este banco de dados e como suas informações são atualizadas, veremos que nem todas as tabelas mudam em conjunto. Se modificarmos o fluxo de acesso podemos guardar a resposta a uma requisição em um sistema de cache e da proxima vez servi-lo da memória. Isso exige que os dados "expirem" ou se invalidem automaticamente para garantir que modificações vao ser vistas (troca de sobrenome ou endereço por exemplo).
+Se analisarmos o padrão das solicitações a este banco de dados e como suas informações são atualizadas, veremos que nem todas as tabelas mudam em conjunto. Se modificarmos o fluxo de acesso podemos guardar a resposta a uma requisição em um sistema de cache e da proxima vez servi-lo da memória. Isso exige que os dados "expirem" ou se invalidem automaticamente para garantir que modificações vejam vistas (troca de sobrenome ou endereço por exemplo).
 
 Esta modificação adiciona um componente novo ao sistema e intercepta as requisições para verificar se a resposta a uma requisição já existe no cache. Isso é feito usando o modelo "K/V - Key Value" (Chave/Valor). Esta é a assinatura de uma estrutura de dados do tipo Hash ou Dicionário. Você pode usar a query como Chave, e receber seu resultado como Valor.
 
@@ -44,15 +44,15 @@ A lista poderia ficar - e ficou - maior que o que a memória de um processo pode
 
 #### Bloom Filter
 
-Bloom filter é uma estrutura de dado probabilistica de baixo consumo de espaço e alta velocidade, que deixa testar a probabilidade de um membro pertencer a um conjunto. Para entender o bloom filter precisamos entender seus componentes:
+Bloom filter é uma estrutura de dado probabilística de baixo consumo de espaço e alta velocidade, que deixa testar a probabilidade de um membro pertencer a um conjunto. Para entender o bloom filter precisamos entender seus componentes:
 
-###### O que é um conjunto (Set)
+###### O que é um conjunto (Set)?
 
-Um conjunto é uma estrutura de dados que de forma simplificada guarda um item único por posição. Conjuntos podem ser combinados, comparados e subtraidos (Union, Compare, Difference). No Bloom filter a estrutura usada é um BitSet, Conjunto de bits. Esta estrutura também é chamada de Bit Array e é uma lista grande em que cada posição representa um bit. 
+Um conjunto é uma estrutura de dados que de forma simplificada guarda um item único por posição. Conjuntos podem ser combinados, comparados e subtraidos (Union, Compare, Difference). No Bloom filter a estrutura usada é um BitSet, Conjunto de bits. Esta estrutura também é chamada de Bit Array e é uma lista grande em que cada posição representa um bit.
 
 ###### Funções de Hash
 
-Dado um item a ser inserido, deve ser calculado seu Hash usando funções que vão mapear o item a varias posições do BitSet mencionado anteriormente
+Dado um item a ser inserido, deve ser calculado seu Hash usando funções que vão mapear o item a varias posições do BitSet mencionado anteriormente.
 
 
  Fica mais facil visualizar com um diagrama (fonte: [wikipedia](https://commons.wikimedia.org/wiki/File:Bloom_filter.svg))
@@ -61,7 +61,7 @@ Dado um item a ser inserido, deve ser calculado seu Hash usando funções que v�
  
  Os elementos **{x,y,z}** foram adicionados no BitSet. As setas coloridas sao as funções de hash utilizadas para modificar os bits no BitSet (a lista de 0 e 1). O elemento **{w}** não está no BitSet.
  
- O BitSet resultante das adições cria uma situação interessante. O Bloom Filter tem _quase certeza_ de que os elementos **{x,y,z}** estão lá. Mas tem certeza absoluta de que  **{w}** não está representado. Porque quase certeza ? Existe a chance de que se procurarmos um elemento não existente no BitSet, uma de suas funções Hash indique um bit que esta em `1`
+ O BitSet resultante das adições cria uma situação interessante. O Bloom Filter tem _quase certeza_ de que os elementos **{x,y,z}** estão lá. Mas tem certeza absoluta de que  **{w}** não está representado. Porque quase certeza ? Existe a chance de que se procurarmos um elemento não existente no BitSet, uma de suas funções Hash indique um bit que esta em `1`.
  
  Esta é uma característica do Bloom Filter. Ele pode dar falsos positivos (afirmar que um item existe mas ele não ter sido inserido) mas nunca dá falsos negativos. A chance de falso positivos aumenta conforme aumenta o número de elementos adicionados ao Bloom Filter.
  
@@ -75,7 +75,7 @@ A tabela abaixo compara Bloom Filter com um Hash/Dictionary/Map nestas caracteri
 | Bloom Filter | Pior caso é relacionado ao tamanho do BitSet | Usa a representação menor dos valores com hash functions | sim             | não             | não            |
 |              |                                              |                                                          |                 |                 |                |
 
-Vamos usar uma biblioteca para testar o Bloom Filter. Escolhi a biblioteca do site YourBasic pois é simples de usar e visualizar a implementação. O código fonte da biblioteca está em https://github.com/yourbasic/bloom. O playground para este codigo fica em https://play.golang.org/p/tDnQrVV3xBS
+Vamos usar uma biblioteca para testar o Bloom Filter. Escolhi a biblioteca do site YourBasic pois é simples de usar e visualizar a implementação. O código fonte da biblioteca está em https://github.com/yourbasic/bloom. O playground para este codigo fica em https://play.golang.org/p/tDnQrVV3xBS.
 
  ```
 package main
@@ -111,24 +111,24 @@ func main() {
 
  ```
 
-O código acima cria um Bloom Filter com 1000 posições e uma taxa de falsos positivos estimada em 1 em 20. Este número é utilizado para calcular quantos _lookups_(passadas ou buscas) serão feitas no bitset ao adicionar ou testar um item. É importante pois junto com as funções de Hash e o tamanho do BitSet ajuda a controlar a taxa de falso positivos.
+O código acima cria um Bloom Filter com 1000 posições e uma taxa de falsos positivos estimada de 1 em 20. Este número é utilizado para calcular quantos _lookups_(passadas ou buscas) serão feitas no bitset ao adicionar ou testar um item. É importante pois junto com as funções de Hash e o tamanho do BitSet ajuda a controlar a taxa de falso positivos.
 
 Esta biblioteca não implementa uma forma fácil de serialização de dados. Serializar dados é um modo de transformar uma estrutura de dados em um formato que pode ser guardado em um arquivo ou memória e recuperado posteriormente. Isso nos ajudaria a criar um Bloom Filter em um lugar e replica-lo para outro, como o Chrome fazia.
 
-Uma aplicação interessante de Bloom Filters é em banco de dados. O Cassandra utiliza Bloom Filters no caminho de leitura, pois consolida dados em disco com memória. Para evitar acesso ao disco e um full scan (procurar um dado em todas as tabelas em disco) foi implementado um Bloom Filter para criar uma barreira de acesso [https://cassandra.apache.org/doc/latest/operating/bloom_filters.html](https://cassandra.apache.org/doc/latest/operating/bloom_filters.html). 
+Uma aplicação interessante de Bloom Filters é em banco de dados. O Cassandra utiliza Bloom Filters no caminho de leitura, pois consolida dados em disco com memória. Para evitar acesso ao disco e um full scan (procurar um dado em todas as tabelas em disco) foi implementado um Bloom Filter para criar uma barreira de acesso [https://cassandra.apache.org/doc/latest/operating/bloom_filters.html](https://cassandra.apache.org/doc/latest/operating/bloom_filters.html).
 
-O LevelDB do Google, um banco de dados local chave/valor também utiliza Bloom Filters para mapear os blocos em disco em uma estrutura que chega a reduzir em 100 vezes a necessidade de I/O [https://github.com/google/leveldb/blob/master/doc/index.md](https://github.com/google/leveldb/blob/master/doc/index.md). 
+O LevelDB do Google, um banco de dados local chave/valor também utiliza Bloom Filters para mapear os blocos em disco em uma estrutura que chega a reduzir em 100 vezes a necessidade de I/O [https://github.com/google/leveldb/blob/master/doc/index.md](https://github.com/google/leveldb/blob/master/doc/index.md).
 
-Se você se interessar por mais detalhes sobre Bloom Filters, a página da Wikipédia  [https://en.wikipedia.org/wiki/Bloom_filter](https://en.wikipedia.org/wiki/Bloom_filter) tem um conteúdo interessante, que explica o artigo original e detalha suas configurações. 
+Se você se interessar por mais detalhes sobre Bloom Filters, a página da Wikipédia  [https://en.wikipedia.org/wiki/Bloom_filter](https://en.wikipedia.org/wiki/Bloom_filter) tem um conteúdo interessante, que explica o artigo original e detalha suas configurações.
 
 
 #### Cuckoo Filter
 
-O Cuckoo Filter vive na mesma categoria que o Bloom Filter, é uma implementação das mesmas idéias mas que permite a remoção de um elemento e implementa pequenas mudanças que ajudam a diminuir os falsos positivos. Existem implementações de Bloom Filter que permitem remover itens também com uma troca de eficiencia ou espaço ocupado. 
+O Cuckoo Filter vive na mesma categoria que o Bloom Filter, é uma implementação das mesmas idéias mas que permite a remoção de um elemento e implementa pequenas mudanças que ajudam a diminuir os falsos positivos. Existem implementações de Bloom Filter que permitem remover itens também com uma troca de eficiencia ou espaço ocupado.
 
-O Bloom Filter é mais eficiente em espaço e busca para largos volumes de dados mas as aplicações são semelhantes, voc6e poderia trocar um pelo outro. A vantagem é a remoção de elementos e a melhora dos falsos positivos, que aumentam no Bloom Filter conforme mais dados são armazenados.
+O Bloom Filter é mais eficiente em espaço e busca para largos volumes de dados mas as aplicações são semelhantes, você poderia trocar um pelo outro. A vantagem é a remoção de elementos e a melhora dos falsos positivos, que aumentam no Bloom Filter conforme mais dados são armazenados.
 
-Este artigo https://www.cs.cmu.edu/~dga/papers/cuckoo-conext2014.pdf explica como o Cuckoo Filter implementa suas funções de hash e correção de erros. Como no exemplo anterior vou usar uma biblioteca [https://github.com/seiflotfy/cuckoofilter](https://github.com/seiflotfy/cuckoofilter). Você pode rodar o exemplo em https://play.golang.org/p/zVIbXlbgSMl
+Este artigo https://www.cs.cmu.edu/~dga/papers/cuckoo-conext2014.pdf explica como o Cuckoo Filter implementa suas funções de hash e correção de erros. Como no exemplo anterior vou usar uma biblioteca [https://github.com/seiflotfy/cuckoofilter](https://github.com/seiflotfy/cuckoofilter). Você pode rodar o exemplo em https://play.golang.org/p/zVIbXlbgSMl.
 
 ```
 package main
@@ -184,7 +184,7 @@ func main() {
 
 O código é parecido com o que usei para mostrar o Bloom Filter, com a contagem de elementos no Cuckoo Filter entre as operações e também com a operação de DELETE de um item. Esta biblioteca fornece funções de serialização/deserialização também. O código é bem interessante de ler.
 
-Posso alterar meu código para guardar o filtro e carregar depois com as funções **Encode** e **Decode** https://play.golang.org/p/urTVjJX6xHP
+Posso alterar meu código para guardar o filtro e carregar depois com as funções **Encode** e **Decode** https://play.golang.org/p/urTVjJX6xHP.
 
 ```
 package main
@@ -249,21 +249,21 @@ Minha intenção foi comparar os usos e demonstrar como a remoção de um elemen
 
 #### HyperLogLog
 
-Existe um problema em ciencia da computação chamado _count-distinct_- ou estimativa de cardinalidade que procura soluções para encontrar o número de elementos distintos (únicos) em um stream (sequencia) de dados que pode conter elementos repetidos. Um pouco a frente vou falar de um problema que tivemos para contar um grande volume de clicks, ou visitas de dispositivos, mantendo contadores totais e de visitas únicas entre mais de 40 trilhões de documentos.
+Existe um problema em ciência da computação chamado _count-distinct_- ou estimativa de cardinalidade que procura soluções para encontrar o número de elementos distintos (únicos) em um stream (sequência) de dados que pode conter elementos repetidos. Um pouco a frente vou falar de um problema que tivemos para contar um grande volume de clicks, ou visitas de dispositivos, mantendo contadores totais e de visitas únicas entre mais de 40 trilhões de documentos.
 
-Este problema tem aplicações bem interessantes em IoT, monitoração, data science e analytics e com o crescente volume de dados é um grupo de algoritmos interessante de estudar para entender o impacto de performance e precisão das soluções existentes. 
+Este problema tem aplicações bem interessantes em IoT, monitoração, data science e analytics e com o crescente volume de dados é um grupo de algoritmos interessante de estudar para entender o impacto de performance e precisão das soluções existentes.
 
-Produtos como Elasticsearch e InfluxDB utilizam o algoritmo HyperLogLog++ para estimar a cardinalidade de agregações e conjuntos de dados acima de um certo número. 
+Produtos como Elasticsearch e InfluxDB utilizam o algoritmo HyperLogLog++ para estimar a cardinalidade de agregações e conjuntos de dados acima de um certo número.
 
 Em [https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-metrics-cardinality-aggregation.html](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-metrics-cardinality-aggregation.html) podemos ver que agregações são guardadas em uma estrutura chamada HyperLogLog++. A documentação fala sobre cardinalidade, o tamanho do conjunto de documentos e também sobre a precisão.
 
 No InfluxDB as metricas internas também usam HyperLogLog para prover contadores de monitoração [https://docs.influxdata.com/platform/monitoring/influxdata-platform/tools/measurements-internal/](https://docs.influxdata.com/platform/monitoring/influxdata-platform/tools/measurements-internal/). O Redis provê um tipo baseado em HLL(abreviação para HyperLogLog) nos comandos iniciados com PF*.
 
-O Google publicou um artigo sobre este algoritmo com melhorias para seus casos e comparação com o algoritmo original [https://research.google/pubs/pub40671/](https://research.google/pubs/pub40671/) . Pesquisadores continuam implementando mudanças para casos especificos como este conjunto de modificações descritas nestes slides [https://csqjxiao.github.io/PersonalPage/csqjxiao_files/papers/INFOCOM17-slides.pdf](https://csqjxiao.github.io/PersonalPage/csqjxiao_files/papers/INFOCOM17-slides.pdf) 
+O Google publicou um artigo sobre este algoritmo com melhorias para seus casos e comparação com o algoritmo original [https://research.google/pubs/pub40671/](https://research.google/pubs/pub40671/). Pesquisadores continuam implementando mudanças para casos especificos como este conjunto de modificações descritas nestes slides [https://csqjxiao.github.io/PersonalPage/csqjxiao_files/papers/INFOCOM17-slides.pdf](https://csqjxiao.github.io/PersonalPage/csqjxiao_files/papers/INFOCOM17-slides.pdf).
 
-A biblioteca que vou usar é baseada neste ultimo trabalho \, [https://github.com/axiomhq/hyperloglog](https://github.com/axiomhq/hyperloglog) e prove uma implementação interessante de HLL, com serialização e otimização da função de hash com redução do espaço utilizado.
+A biblioteca que vou usar é baseada neste ultimo trabalho \, [https://github.com/axiomhq/hyperloglog](https://github.com/axiomhq/hyperloglog) e provê uma implementação interessante de HLL, com serialização e otimização da função de hash com redução do espaço utilizado.
 
-Você pode rodar o exemplo abaixo no play: https://play.golang.org/p/S5cHfBGLpcF
+Você pode rodar o exemplo abaixo no play: https://play.golang.org/p/S5cHfBGLpcF.
 
 ```
 package main
@@ -363,9 +363,9 @@ Para estimar _Visitantes Unicos_ baseados em endereço IP ou outra forma de fing
 
 Neste ponto quero explicar o que procuro em uma biblioteca que oferece este tipo de estrutura de dados.
 
-Quando aprendo uma nova estrutura de dados eu procuro saber dos trade-offs, o que ela oferece de vantagem e o que preciso entender que não terei em relação a outras estruturas que conheço melhor. Procuro entender se as implementações vão permitir que consiga serializar e deserializar. 
+Quando aprendo uma nova estrutura de dados eu procuro saber dos _trade-offs_, o que ela oferece de vantagem e o que preciso entender que não terei em relação a outras estruturas que conheço melhor. Procuro entender se as implementações vão permitir que consiga serializar e deserializar.
 
-Também procuro o termo "Mergeable" ou "Merge" que significa que posso juntar mais de uma instancia deste tipo. Saber se os elementos podem ser deletados de alguma maneira vai me dizer um pouco disso também. 
+Também procuro o termo "Mergeable" ou "Merge" que significa que posso juntar mais de uma instância deste tipo. Saber se os elementos podem ser deletados de alguma maneira vai me dizer um pouco disso também.
 
 Olhando o código da biblioteca e conhecendo um pouco como Go funciona, eu tento ver como a implementação infere tipos - se isso acontece - e como usa reflection, uma técnica de inspeção que pode afetar a performance.
 
@@ -387,30 +387,30 @@ A arquitetura do sistema era em streaming e a idéia é que contadores simples (
 
 ![arquitetura antiga](images/product_old_arch.png)
 
-Esta era a arquitetura antiga, incluindo ETLs e bancos de dados diversos. É um caso de feature creep interessante pois além de código bancos de dados foram acompanhando o crescimento do produto. Entre os repositórios de dados existiam Cassandra, S3, Elasticsearch e PGSQL. Os coletores de dados produziam mais de 15 mil documentos por segundo, e a retenção dos documentos variava de 15 a 90 dias. Para um volume pequeno de documentos (até um ou 2 bilhões) um cluster grande ainda era eficiente mas com mais de 40 trilhões e um volume alto de trafego de rede todos os elementos desta arquitetura eram afetados.
+Esta era a arquitetura antiga, incluindo ETLs e bancos de dados diversos. É um caso de feature creep interessante pois além de código bancos de dados foram acompanhando o crescimento do produto. Entre os repositórios de dados existiam Cassandra, S3, Elasticsearch e PGSQL. Os coletores de dados produziam mais de 15 mil documentos por segundo, e a retenção dos documentos variava de 15 a 90 dias. Para um volume pequeno de documentos (até um ou 2 bilhões) um cluster grande ainda era eficiente mas com mais de 40 trilhões e um volume alto de tráfego de rede todos os elementos desta arquitetura eram afetados.
 
 ![current arch](images/product_current_arch.png)
 Além da refatoração para remover alguns bancos de dados e o uso de eventos entre os produtos, a função do Elasticsearch foi inicialmente movida para um PGSQL como contadores. Essa arquitetura tem muitos elementos da Arquitetura Lambda.
 
 Inicialmente tentamos guardar dados de um determinado periodo em um Redis e nas primeiras modelagens vimos que o consumo de memória era grande, e o tempo para fazer _backfill_ (restaurar ou preencher uma nova instancia) era de dias. Em paralelo fiz um teste de usar uma implementação em Go do HyperLogLog para testar se conseguiria serializar os contadores e ter uma abordagem diferente do Redis, que quando persiste os dados em disco usa apenas um arquivo com extensão .rdb.
 
-A solução que implementamos após estas pesquisas foi hibrida, utilizou um banco de dados relacionais para contadores e um ElasticSearch bem menor com expiração de documentos pelo _curator_, modificamos algumas características do produto para refletir a margem de erro que existia. 
+A solução que implementamos após estas pesquisas foi hibrida, utilizou um banco de dados relacionais para contadores e um ElasticSearch bem menor com expiração de documentos pelo _curator_, modificamos algumas características do produto para refletir a margem de erro que existia.
 
-Eu continuei trabalhando naquele código que simulava o Redis e expandindo os comandos. Era uma plataforma boa para conhecer melhor estas estruturas de dados probabilisticas e inventar um Redis que não tivesse muita certeza das coisas, uma alusão aos trade-offs destas estruturas em favor de espaço e velocidade.
+Eu continuei trabalhando naquele código que simulava o Redis e expandindo os comandos. Era uma plataforma boa para conhecer melhor estas estruturas de dados probabilísticas e inventar um Redis que não tivesse muita certeza das coisas, uma alusão aos trade-offs destas estruturas em favor de espaço e velocidade.
 
 #### Nazaré
 
-Meu objetivo ao usar o Cuckoo Filter foi recriar este servidor de cache probabilistico, usando um protocolo conhecido e que me permitisse "trocar" o cache com uma operação apenas. Parece complicado mas a idéia é simples: Ao serializar um Cuckoo Filter com os dados que preciso consultar e gravar em disco, posso copiar com ferramentas simples entre containers. O tamanho do arquivo será pequeno, a eficiencia é alta e não preciso implementar nada mais complexo que "treinar" o filtro e distribui-lo. 
+Meu objetivo ao usar o Cuckoo Filter foi recriar este servidor de cache probabilistico, usando um protocolo conhecido e que me permitisse "trocar" o cache com uma operação apenas. Parece complicado mas a idéia é simples: Ao serializar um Cuckoo Filter com os dados que preciso consultar e gravar em disco, posso copiar com ferramentas simples entre containers. O tamanho do arquivo será pequeno, a eficiencia é alta e não preciso implementar nada mais complexo que "treinar" o filtro e distribui-lo.
 
 Além disso usar um protocolo conhecido facilita a fazer um "drop in replacement" de serviços como Memcached e Redis sem ter que inventar uma semantica nova, só alterando o comportamento interno do servidor. É a minha maneira de relacionar algo novo com o comportamento de um sistema que já conheço. Este artificio já me ajudou ao trabalhar com sistemas legados em que eu não tinha outra saida a não ser clients que falavam o protocolo Memcached, por exemplo.
 
 Este experimento virou um projeto chamado Nazaré, que está em meu github [https://github.com/gleicon/nazare](https://github.com/gleicon/nazare) e utilizo mostrar estes algoritmos na pratica.
 
-A estrutura deste serviço é simples. É um servidor que entende o protocolo do Redis e implementa poucos dos seus comandos. Para cada grupo de comando escolhi um algoritmo probabilistico e como persistencia de dados utilizei o BadgerDB - [https://github.com/dgraph-io/badger](https://github.com/dgraph-io/badger) 
+A estrutura deste serviço é simples. É um servidor que entende o protocolo do Redis e implementa poucos dos seus comandos. Para cada grupo de comando escolhi um algoritmo probabilistico e como persistencia de dados utilizei o BadgerDB - [https://github.com/dgraph-io/badger](https://github.com/dgraph-io/badger).
 
-Depois de algum tempo mantendo meu código de rede e o parsing dos comandos do Redis decidi usar uma biblioteca que implementa seu protocolo de maneira simples [https://github.com/tidwall/redcon](https://github.com/tidwall/redcon) 
+Depois de algum tempo mantendo meu código de rede e o parsing dos comandos do Redis decidi usar uma biblioteca que implementa seu protocolo de maneira simples [https://github.com/tidwall/redcon](https://github.com/tidwall/redcon).
 
-Para facilitar os testes eu separei o projeto em modulos que usei para criar um command line, _nazare-cli_, que tem os mesmos tipos apresentados no servidor. Para isso usei a biblioteca Cobra [https://github.com/spf13/cobra](https://github.com/spf13/cobra)
+Para facilitar os testes eu separei o projeto em modulos que usei para criar um command line, _nazare-cli_, que tem os mesmos tipos apresentados no servidor. Para isso usei a biblioteca Cobra [https://github.com/spf13/cobra](https://github.com/spf13/cobra).
 
 
 
