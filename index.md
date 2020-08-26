@@ -354,8 +354,9 @@ HLL total size:	 32776
 Map total size:	 10000000
 ```
 
-A cada rodada em que aumentam os itens no HLL, o erro ao estimar o tamanho aumenta levemente. Com 10MM de itens a diferença é de 0.3025% em relação ao slice com todos os itens. Se compararmos o tamanho em bytes, o HLL tem 32776 bytes depois de serializado. O slice de booleans tem 10MM itens * 1byte, quase 10MB.
+Conforme mais itens são adicionados no HLL, o erro ao estimar o tamanho aumenta levemente. Com 10MM de itens a diferença é de 0.3025% em relação ao slice com todos os itens. Se compararmos o tamanho em bytes, o HLL tem 32776 bytes depois de serializado. O slice de booleans tem 10MM itens * 1byte, quase 10MB.
 
+Para estimar _Visitantes Unicos_ baseados em endereço IP ou outra forma de fingerprint em um sistema como de Analytics este é um trade-off interessante. Como mencionei acima, o Elasticsearch utiliza um HLL configuravel para guardar agregações salvando espaço de disco, memoria e banda de rede em troca de um tradeoff configuravel de precisão.
 
 
 #### O que procurar em uma biblioteca?
@@ -372,11 +373,15 @@ Depois disso tento fazer um exemplo relacionando com uma estrutura conhecida, co
 
 Com isso vou melhorando meu entendimento e consigo interpretar melhor o artigo ou origem da estrutura. Eu mantenho alguns projetos que facilitam este entendimento e vou usar um deles para contextualizar as estruturas que vimos até agora e como uso outra estrutura interessante, o HyperLogLog.
 
-#### Estudo de um caso real
+#### Estudo de caso 
 
-A motivação foi um estudo para armazenar dados de clickstream em um projeto que utilizava o Elasticsearch. O volume de dados armazenados era grande (mais de 40 trilhões de documentos) e a maioria das pesquisas eram contadores e sumarizações.
+A minha motivação para usar HyperLogLog foi um estudo para armazenar dados de clickstream em um projeto que utilizava o Elasticsearch. O volume de dados armazenados era grande (mais de 40 trilhões de documentos) e a maioria das pesquisas eram contadores e sumarizações. 
 
- Com o crescimento do produto a solução de guardar documentos no Elasticsearch e solicitar agregações ficou insustentável. O cluster estava grande, caro e os problemas aconteciam todo dia. Pensamos em pré-calcular algumas agregações, usar contadores e procurar uma alternativa com os mesmos principios para não causar um grande impacto na arquitetura existente. O Redis oferece um tipo baseado em HyperLogLog [https://redis.io/commands/pfcount](https://redis.io/commands/pfcount) e com isso modificamos nosso código para testar.
+ Com o crescimento do produto a solução de guardar documentos no Elasticsearch e solicitar agregações ficou insustentável. O cluster estava grande, caro e os problemas aconteciam todo dia. Pensamos em pré-calcular algumas agregações, usar contadores e procurar uma alternativa com os mesmos principios para não causar um grande impacto na arquitetura existente. 
+
+A documentação do Elasticsearch indicava que acima de um certo numero de documentos, as agregações eram gaurdadas em um HLL. Como o Redis oferece um tipo baseado em HyperLogLog [https://redis.io/commands/pfcount](https://redis.io/commands/pfcount) pensamos em modificar nosso código para testar se teriamos uma arquitetura mais resiliente. 
+ 
+ Uma das preocupações com o volume de dados que operavamos é o backfill em caso de problemas, e haviamos passado um problema semelhante em que perdemos um cluster grande de ScyllaDB, um banco de dados distribuidos. Encontramos todo tipo de gargalo com maquinas virtuais para reabastecer o cluster com os dados que precisavamos. Um rebalanceamento normal do cluster durou 18h e nem foi uma copia completa de dados.
 
 A arquitetura do sistema era em streaming e a idéia é que contadores simples (um numero incremental) não ajudaria em consultas especificas de agregações em atributos como endereço IP de um click. Para ilustrar coloquei um diagrama abaixo:
 
