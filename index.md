@@ -259,8 +259,103 @@ Em [https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggre
 
 No InfluxDB as metricas internas também usam HyperLogLog para prover contadores de monitoração [https://docs.influxdata.com/platform/monitoring/influxdata-platform/tools/measurements-internal/](https://docs.influxdata.com/platform/monitoring/influxdata-platform/tools/measurements-internal/). O Redis provê um tipo baseado em HLL(abreviação para HyperLogLog) nos comandos iniciados com PF*.
 
+O Google publicou um artigo sobre este algoritmo com melhorias para seus casos e comparação com o algoritmo original [https://research.google/pubs/pub40671/](https://research.google/pubs/pub40671/) . Pesquisadores continuam implementando mudanças para casos especificos como este conjunto de modificações descritas nestes slides [https://csqjxiao.github.io/PersonalPage/csqjxiao_files/papers/INFOCOM17-slides.pdf](https://csqjxiao.github.io/PersonalPage/csqjxiao_files/papers/INFOCOM17-slides.pdf) 
 
-<exemplo>
+A biblioteca que vou usar é baseada neste ultimo trabalho \, [https://github.com/axiomhq/hyperloglog](https://github.com/axiomhq/hyperloglog) e prove uma implementação interessante de HLL, com serialização e otimização da função de hash com redução do espaço utilizado.
+
+Você pode rodar o exemplo abaixo no play: https://play.golang.org/p/S5cHfBGLpcF
+
+```
+package main
+
+import (
+	"fmt"
+	"strconv"
+
+	"github.com/axiomhq/hyperloglog"
+)
+
+func estimateError(got, exp uint64) float64 {
+	var delta uint64
+	if got > exp {
+		delta = got - exp
+	} else {
+		delta = exp - got
+	}
+	return float64(delta) / float64(exp)
+}
+
+func main() {
+	axiom := hyperloglog.New16()
+
+	step := 10
+	unique := map[string]bool{}
+
+	for i := 1; len(unique) < 10000000; i++ {
+		str := "stream-" + strconv.Itoa(i)
+		axiom.Insert([]byte(str))
+		unique[str] = true
+
+		if len(unique)%step == 0 || len(unique) == 10000000 {
+			step *= 5
+			exact := uint64(len(unique))
+			res := axiom.Estimate()
+			ratio := 100 * estimateError(res, exact)
+			fmt.Printf("Exact count %d \nHLL count %d (%.4f%% off)\n\n", exact, res, ratio)
+		}
+	}
+
+	data2, err := axiom.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("HLL total size:\t", len(data2))
+	fmt.Println("Map total size:\t", len(unique))
+
+}
+
+```
+
+Este exemplo foi adaptado da documentação do código, e compara duas estruturas: um slice de 10MM de itens com um bool para cada item, e um HLL. Se executarmos o programa:
+
+```
+$ go run hll.go
+Exact count 10
+HLL count 10 (0.0000% off)
+
+Exact count 50
+HLL count 50 (0.0000% off)
+
+Exact count 250
+HLL count 250 (0.0000% off)
+
+Exact count 1250
+HLL count 1250 (0.0000% off)
+
+Exact count 6250
+HLL count 6250 (0.0000% off)
+
+Exact count 31250
+HLL count 31253 (0.0096% off)
+
+Exact count 156250
+HLL count 155914 (0.2150% off)
+
+Exact count 781250
+HLL count 778300 (0.3776% off)
+
+Exact count 3906250
+HLL count 3874441 (0.8143% off)
+
+Exact count 10000000
+HLL count 9969753 (0.3025% off)
+
+HLL total size:	 32776
+Map total size:	 10000000
+```
+
+A cada rodada em que aumentam os itens no HLL, o erro ao estimar o tamanho aumenta levemente. Com 10MM de itens a diferença é de 0.3025% em relação ao slice com todos os itens. Se compararmos o tamanho em bytes, o HLL tem 32776 bytes depois de serializado. O slice de booleans tem 10MM itens * 1byte, quase 10MB.
+
 
 
 #### O que procurar em uma biblioteca?
