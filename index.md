@@ -379,7 +379,9 @@ A minha motivação para usar HyperLogLog foi um estudo para armazenar dados de 
 
  Com o crescimento do produto a solução de guardar documentos no Elasticsearch e solicitar agregações ficou insustentável. O cluster estava grande, caro e os problemas aconteciam todo dia. Pensamos em pré-calcular algumas agregações, usar contadores e procurar uma alternativa com os mesmos principios para não causar um grande impacto na arquitetura existente. 
 
-A documentação do Elasticsearch indicava que acima de um certo numero de documentos, as agregações eram gaurdadas em um HLL. Como o Redis oferece um tipo baseado em HyperLogLog [https://redis.io/commands/pfcount](https://redis.io/commands/pfcount) pensamos em modificar nosso código para testar se teriamos uma arquitetura mais resiliente. Uma das preocupações neste volume de dados é o backfill em caso de problemas, e haviamos passado um problema semelhante com ScyllaDB em que perdemos um cluster grande. Usando maquinas virtuais encontramos todo tipo de gargalo para reabastecer o cluster com os dados que precisavamos. Um rebalanceamento de cluster durou 18h e nem foi uma copia completa de dados.
+A documentação do Elasticsearch indicava que acima de um certo numero de documentos, as agregações eram gaurdadas em um HLL. Como o Redis oferece um tipo baseado em HyperLogLog [https://redis.io/commands/pfcount](https://redis.io/commands/pfcount) pensamos em modificar nosso código para testar se teriamos uma arquitetura mais resiliente. 
+ 
+ Uma das preocupações com o volume de dados que operavamos é o backfill em caso de problemas, e haviamos passado um problema semelhante em que perdemos um cluster grande de ScyllaDB, um banco de dados distribuidos. Encontramos todo tipo de gargalo com maquinas virtuais para reabastecer o cluster com os dados que precisavamos. Um rebalanceamento normal do cluster durou 18h e nem foi uma copia completa de dados.
 
 A arquitetura do sistema era em streaming e a idéia é que contadores simples (um numero incremental) não ajudaria em consultas especificas de agregações em atributos como endereço IP de um click. Para ilustrar coloquei um diagrama abaixo:
 
