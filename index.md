@@ -1,7 +1,24 @@
+
+
+  * [Estruturas de dados probabilísticas (Sketch Data Structures) e Go](#estruturas-de-dados-probabilísticas-sketch-data-structures-e-go)
+            * [Introdução](#introdução)
+            * [Cache](#cache)
+            * [Bloom Filter](#bloom-filter)
+                  * [O que é um conjunto (Set)?](#o-que-é-um-conjunto-set)
+                  * [Funções de Hash](#funções-de-hash)
+            * [Cuckoo Filter](#cuckoo-filter)
+            * [HyperLogLog](#hyperloglog)
+            * [O que procurar em uma biblioteca?](#o-que-procurar-em-uma-biblioteca)
+            * [Estudo de caso](#estudo-de-caso)
+            * [Nazaré](#nazaré)
+                  * [Comandos Redis implementados e bibliotecas utilizadas](#comandos-redis-implementados-e-bibliotecas-utilizadas)
+            * [Bonus: TopK](#bonus-topk)
+
+
 ### Estruturas de dados probabilísticas (Sketch Data Structures) e Go
 
 #### Introdução
-Este ebook é um trabalho em progresso constante. Eu vou adicionando e modificando de acordo com meu aprendizado e também com novidades que encontro. A minha intenção é ter um guia rápido em português que possa ajudar a resolver problemas de engenharia de dados com Go.
+Este ebook é um trabalho em progresso. Eu vou adicionando informações e modificando de acordo com meu aprendizado e também com novidades que encontro. A minha intenção é ter um guia rápido em português que possa ajudar a resolver alguns problemas de engenharia de dados com Go. Os exemplos de código estão no Github junto ao fonte do livro em [https://github.com/gleicon/ebook-go-sketch](https://github.com/gleicon/ebook-go-sketch).  
 
 As anotações começaram como meu diário de uso de Go para serviços de uso bem especifico: contar, acumular e registrar grandes volumes de dados em alta velocidade. Estes problemas são descritos há muito tempo e aparecem de várias formas: brokers de mensagens, servidores de coleta de dados, pixel de tracking para trafego web, coleta de metricas em dispositivos móveis, monitoração de serviços, entre outros.
 
@@ -9,9 +26,9 @@ Meu primeiro contato com Go foi em um curso em 2011 na OSCON, uma conferencia da
 
 Meu jeito de aprender uma linguagem ou framework é fazer uma versão simples do projeto [Memcached](https://github.com/gleicon/beano) e do meu projeto [RESTMQ](https://github.com/gleicon/restmq), para entender como fazer um servidor, como atender requisições, como guardar dados e serialização. Eles foram bem mas continuei sem compromisso até que o meu time resolveu um problema de roteamento de email em larga escala e volume em Go. Este projeto me chamou a atenção pela simplicidade e escalabilidade. Na época usando maquinas fisicas a redução de uso de recursos foi impressionante.
 
-Comecei a investir mais tempo ajudando em alguns projetos opensource para pegar o jeito da linguagem, comecei a portar ou criar pequenos projetos e tenho usado Go desde então.
+Comecei a investir tempo ajudando em alguns projetos opensource para pegar o jeito da linguagem, depois portei e criei pequenos projetos e tenho usado Go desde então.
 
-O mesmo aconteceu com estruturas de dados probabilísticas. Eu vou contar como tive contato com elas, minha motivação e explica-las de uma forma simples com referências para quem se interessar em profundidade, para manter este livro breve.
+O mesmo aconteceu com estruturas de dados probabilísticas. Eu vou contar como tive contato com elas, minha motivação e explica-las de uma forma simples com referências para quem se interessar em profundidade, para manter este livro breve. Em cada uma vou colocar referências para o artigo ou texto que utilizei para entender como funcionam. Para manter este ebook em um tamanho razoável vou usar um projeto meu como exemplo prático de aplicação.
 
 Nesta jornada eu tive vários momentos que só posso descrever como "_solução a procura de um problema_": as vezes lia um artigo ou via um exemplo de código e revisava meus projetos e o trabalho a procura de uma oportunidade de usar a idéia.
 
@@ -418,7 +435,7 @@ Para facilitar os testes eu separei o projeto em modulos que usei para criar um 
 
 ![diagrama da nazaré](images/nazare.png)
 
-###### Comandos Redis implementados
+###### Comandos Redis implementados e bibliotecas utilizadas
 
 | Comando   | Algoritmo     | Biblioteca                        | Backend  |
 |-----------|---------------|-----------------------------------|----------|
@@ -432,7 +449,7 @@ Para facilitar os testes eu separei o projeto em modulos que usei para criar um 
 | SCARD     | Cuckoo Filter | github.com/seiflotfy/cuckoofilter | BadgerDB |
 | SISMEMBER | Cuckoo Filter | github.com/seiflotfy/cuckoofilter | BadgerDB |
 
-O código é organizado por modulos: server, datalayer, counters, sets e db. Cada modulo entende uma parte do modelo de dados. Eu usei as funções de serialização de cada biblioteca para gerar um byte slice e guardar no BadgerDB como valor de uma chave: [https://github.com/gleicon/nazare/blob/master/counters/hllcounters.go#L117-L153](https://github.com/gleicon/nazare/blob/master/counters/hllcounters.go#L117-L153)
+O código do Nazaré é organizado por modulos: server, datalayer, counters, sets e db. Cada modulo entende uma parte do modelo de dados. Eu usei as funções de serialização de cada biblioteca para gerar um byte slice e guardar no BadgerDB como valor de uma chave: [https://github.com/gleicon/nazare/blob/master/counters/hllcounters.go#L117-L153](https://github.com/gleicon/nazare/blob/master/counters/hllcounters.go#L117-L153)
 
 
 ```
@@ -608,6 +625,9 @@ if addFlag {
 
 Adicionar uma nova estrutura no datalayer permite expo-la para o servidor ou command line sem grandes mudanças na camada de command parsing ou storage.
 
-#### Databases locais
-#### Bonus: DDK
+Para testar fiz um programa que adiciona endereços IP pelo protocolo do Redis, usando as faixas de endereços da AWS disponíveis em https://ip-ranges.amazonaws.com/ip-ranges.json. São 8811008 (até minha ultima contagem) que vou inserir duas vezes no Redis e no Nazaré para comparar algumas características. Os IPs não tem importancia, quis usar uma massa de dados que fosse parecida com a realidade. Este programa pode ser alterado facilmente para outros propósitos como testar outros algoritmos de estimativa ou cache.
+
+Vou começar com dois servidores com o banco de dados em disco vazio, usando um client de redis para gravar em ambos. 
+
+#### Bonus: TopK
 
