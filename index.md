@@ -1,6 +1,6 @@
 
 
-  * [Estruturas de dados probabilísticas (Sketch Data Structures) e Go](#estruturas-de-dados-probabilísticas-sketch-data-structures-e-go)
+   * [Estruturas de dados probabilísticas (Sketch Data Structures) e Go](#estruturas-de-dados-probabilísticas-sketch-data-structures-e-go)
             * [Introdução](#introdução)
             * [Cache](#cache)
             * [Bloom Filter](#bloom-filter)
@@ -12,12 +12,19 @@
             * [Estudo de caso](#estudo-de-caso)
             * [Nazaré](#nazaré)
                   * [Comandos Redis implementados e bibliotecas utilizadas](#comandos-redis-implementados-e-bibliotecas-utilizadas)
+                  * [Organização do código](#organização-do-código)
+                  * [Testes](#testes)
             * [Bonus: TopK](#bonus-topk)
+               * [Conclusão](#conclusão)
+            
 
 
 ### Estruturas de dados probabilísticas (Sketch Data Structures) e Go
 
+(cc) Gleicon - gleicon@gmail.com
+
 #### Introdução
+
 Este ebook é um trabalho em progresso. Eu vou adicionando informações e modificando de acordo com meu aprendizado e também com novidades que encontro, que tenho costume de anotar. A minha intenção é ter um guia rápido em português que possa ajudar a resolver alguns problemas de engenharia de dados com Go. Os exemplos de código estão no Github junto ao fonte do livro em [https://github.com/gleicon/ebook-go-sketch](https://github.com/gleicon/ebook-go-sketch).  
 
 Minhas anotações começaram como meu diário de uso de Go para serviços de uso bem especifico: contar, acumular e registrar grandes volumes de dados em alta velocidade. Estes problemas são descritos há muito tempo e aparecem de várias formas: brokers de mensagens, servidores de coleta de dados, pixel de tracking para trafego web, coleta de metricas em dispositivos móveis, monitoração de serviços, entre outros.
