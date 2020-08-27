@@ -7,11 +7,10 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"sync"
-	"sync/atomic"
+	"strings"
 	"time"
 
-	"github.com/mediocregopher/radix"
+	"github.com/axiomhq/topk"
 )
 
 /*
@@ -87,14 +86,7 @@ func incrementIP(ip net.IP) {
 }
 
 func main() {
-	var wg sync.WaitGroup
 	var ipCount uint64
-
-	RedisConnPool, err := radix.NewPool("tcp", "127.0.0.1:6379", 1000)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer RedisConnPool.Close()
 
 	ipr, err := fetchAWSRanges()
 	if err != nil {
@@ -102,33 +94,48 @@ func main() {
 	}
 	fmt.Printf("Ranges: %d\n", len(ipr.Prefixes))
 
+	tk := topk.New(100)
+
 	ipCount = 0
 	rangeCount := 0
+	exactCount := make(map[string]int)
+
 	for _, ipp := range ipr.Prefixes {
 		rangeCount++
-		/* Uncomment to test a shorter run
+		//Uncomment to test a shorter run
 		if rangeCount > 100 {
 			break
 		}
-		*/
-		wg.Add(1)
-		go func(iprange *IPRange) {
-			defer wg.Done()
-			ip, ipnet, err := net.ParseCIDR(iprange.IPPrefix)
-			if err != nil {
-				log.Println(err)
-			} else {
-				for ip := ip.Mask(ipnet.Mask); ipnet.Contains(ip); incrementIP(ip) {
-					err := RedisConnPool.Do(radix.Cmd(nil, "PFADD", "IPADDRS", ip.String()))
-					if err != nil {
-						log.Println(err)
-					}
-					atomic.AddUint64(&ipCount, 1)
+
+		ip, ipnet, err := net.ParseCIDR(ipp.IPPrefix)
+		if err != nil {
+			log.Println(err)
+		} else {
+			for ip := ip.Mask(ipnet.Mask); ipnet.Contains(ip); incrementIP(ip) {
+				// calculate most common first 2 octets from ip address (xx.yy)
+				octetPrefix := strings.Split(ip.String(), ".")
+				op := fmt.Sprintf("%s.%s", octetPrefix[0], octetPrefix[1])
+				exactCount[op]++
+
+				e := tk.Insert(op, 1)
+				if e.Count < exactCount[op] {
+					fmt.Printf("Error: estimate lower than exact: key=%v, exact=%v, estimate=%v\n", e.Key, exactCount[op], e.Count)
+				}
+				if e.Count-e.Error > exactCount[op] {
+					fmt.Printf("Error: error bounds too large: key=%v, count=%v, error=%v, exact=%v\n", e.Key, e.Count, e.Error, exactCount[op])
 				}
 			}
+		}
 
-		}(&ipp)
 	}
-	wg.Wait()
 	fmt.Printf("Unique IP Addresses: %d\n", ipCount)
+	el := tk.Estimate("52.94")
+	fmt.Printf("Prefix 52.94 ranks at %d\n ", el.Count)
+
+	kk := tk.Keys()
+	fmt.Println("List top 10 matches\nFirst 2 IP octets - Count")
+	for i := 0; i < 10; i++ {
+		fmt.Printf("%s - %d\n", kk[i].Key, kk[i].Count)
+	}
+
 }

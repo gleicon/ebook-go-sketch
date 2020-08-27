@@ -18,9 +18,9 @@
 ### Estruturas de dados probabilísticas (Sketch Data Structures) e Go
 
 #### Introdução
-Este ebook é um trabalho em progresso. Eu vou adicionando informações e modificando de acordo com meu aprendizado e também com novidades que encontro. A minha intenção é ter um guia rápido em português que possa ajudar a resolver alguns problemas de engenharia de dados com Go. Os exemplos de código estão no Github junto ao fonte do livro em [https://github.com/gleicon/ebook-go-sketch](https://github.com/gleicon/ebook-go-sketch).  
+Este ebook é um trabalho em progresso. Eu vou adicionando informações e modificando de acordo com meu aprendizado e também com novidades que encontro, que tenho costume de anotar. A minha intenção é ter um guia rápido em português que possa ajudar a resolver alguns problemas de engenharia de dados com Go. Os exemplos de código estão no Github junto ao fonte do livro em [https://github.com/gleicon/ebook-go-sketch](https://github.com/gleicon/ebook-go-sketch).  
 
-As anotações começaram como meu diário de uso de Go para serviços de uso bem especifico: contar, acumular e registrar grandes volumes de dados em alta velocidade. Estes problemas são descritos há muito tempo e aparecem de várias formas: brokers de mensagens, servidores de coleta de dados, pixel de tracking para trafego web, coleta de metricas em dispositivos móveis, monitoração de serviços, entre outros.
+Minhas anotações começaram como meu diário de uso de Go para serviços de uso bem especifico: contar, acumular e registrar grandes volumes de dados em alta velocidade. Estes problemas são descritos há muito tempo e aparecem de várias formas: brokers de mensagens, servidores de coleta de dados, pixel de tracking para trafego web, coleta de metricas em dispositivos móveis, monitoração de serviços, entre outros.
 
 Meu primeiro contato com Go foi em um curso em 2011 na OSCON, uma conferencia da O'Reilly. Eu havia lido sobre a linguagem e fiquei interessado na simplicidade. Nesta época, eu programava em Python usando o framework Twisted para fazer meus servidores. "Programava" é um eufemismo para o pouco que conseguia fazer entre outras atribuições. Após este curso eu tentei portar alguns projetos para Go sem muito compromisso.
 
@@ -449,6 +449,8 @@ Para facilitar os testes eu separei o projeto em modulos que usei para criar um 
 | SCARD     | Cuckoo Filter | github.com/seiflotfy/cuckoofilter | BadgerDB |
 | SISMEMBER | Cuckoo Filter | github.com/seiflotfy/cuckoofilter | BadgerDB |
 
+###### Organização do código
+
 O código do Nazaré é organizado por modulos: server, datalayer, counters, sets e db. Cada modulo entende uma parte do modelo de dados. Eu usei as funções de serialização de cada biblioteca para gerar um byte slice e guardar no BadgerDB como valor de uma chave: [https://github.com/gleicon/nazare/blob/master/counters/hllcounters.go#L117-L153](https://github.com/gleicon/nazare/blob/master/counters/hllcounters.go#L117-L153)
 
 
@@ -623,11 +625,339 @@ if addFlag {
 	}
 ```
 
-Adicionar uma nova estrutura no datalayer permite expo-la para o servidor ou command line sem grandes mudanças na camada de command parsing ou storage.
+Adicionar uma nova estrutura no datalayer é facil e permite expo-la para o servidor ou command line sem grandes mudanças na camada de command parsing ou storage.
 
-Para testar fiz um programa que adiciona endereços IP pelo protocolo do Redis, usando as faixas de endereços da AWS disponíveis em https://ip-ranges.amazonaws.com/ip-ranges.json. São 8811008 (até minha ultima contagem) que vou inserir duas vezes no Redis e no Nazaré para comparar algumas características. Os IPs não tem importancia, quis usar uma massa de dados que fosse parecida com a realidade. Este programa pode ser alterado facilmente para outros propósitos como testar outros algoritmos de estimativa ou cache.
+###### Testes
 
-Vou começar com dois servidores com o banco de dados em disco vazio, usando um client de redis para gravar em ambos. 
+Para testar fiz um programa  São 8811008 (até minha ultima contagem) que vou inserir duas vezes no Redis e no Nazaré para comparar algumas características. Os IPs não tem importancia, quis usar uma massa de dados que fosse parecida com a realidade. Este programa pode ser alterado facilmente para outros propósitos como testar outros algoritmos de estimativa ou cache.
+
+Se você quiser testar um grande volume de inserções no nazaré ou no redis, eu coloquei um programa que adiciona endereços IP pelo protocolo do Redis, usando as faixas de endereços da AWS disponíveis em https://ip-ranges.amazonaws.com/ip-ranges.json. no repositório junto com um arquivo de configuração do redis simplificado. É um teste que depende da máquina que que vai ser executado e das configurações de arquivos e sockets abertos.
+
+```
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"log"
+	"net"
+	"net/http"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/mediocregopher/radix"
+)
+
+/*
+{
+      "ip_prefix": "54.239.1.96/28",
+      "region": "eu-north-1",
+      "service": "AMAZON",
+      "network_border_group": "eu-north-1"
+	},
+
+*/
+
+// IPRange register
+type IPRange struct {
+	IPPrefix           string `json:"ip_prefix"`
+	Region             string `json:"region"`
+	Service            string `json:"service"`
+	NetworkBorderGroup string `json:"network_border_group"`
+}
+
+// IPRanges struct
+type IPRanges struct {
+	SyncToken  string    `json:"syncToken"`
+	CreateDate string    `json:"createDate"`
+	Prefixes   []IPRange `json:"prefixes"`
+}
+
+func fetchAWSRanges() (*IPRanges, error) {
+	// aws ip ranges
+	// https://ip-ranges.amazonaws.com/ip-ranges.json
+
+	var body []byte
+	var err error
+
+	httpClient := http.Client{
+		Timeout: time.Second * 2, // Timeout after 2 seconds
+	}
+
+	req, err := http.NewRequest(http.MethodGet, "https://ip-ranges.amazonaws.com/ip-ranges.json", nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	res, err := httpClient.Do(req)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if res.Body != nil {
+		defer res.Body.Close()
+	}
+
+	if body, err = ioutil.ReadAll(res.Body); err != nil {
+		return nil, err
+	}
+
+	IPR := IPRanges{}
+	if err = json.Unmarshal(body, &IPR); err != nil {
+		log.Fatalf("unable to parse value: %q, error: %s", string(body), err.Error())
+		return nil, err
+	}
+
+	return &IPR, nil
+}
+
+func incrementIP(ip net.IP) {
+	for j := len(ip) - 1; j >= 0; j-- {
+		ip[j]++
+		if ip[j] > 0 {
+			break
+		}
+	}
+}
+
+func main() {
+	var wg sync.WaitGroup
+	var ipCount uint64
+
+	RedisConnPool, err := radix.NewPool("tcp", "127.0.0.1:6379", 1000)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer RedisConnPool.Close()
+
+	ipr, err := fetchAWSRanges()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Ranges: %d\n", len(ipr.Prefixes))
+
+	ipCount = 0
+	rangeCount := 0
+	for _, ipp := range ipr.Prefixes {
+		rangeCount++
+		/* Uncomment to test a shorter run
+		if rangeCount > 100 {
+			break
+		}
+		*/
+		wg.Add(1)
+		go func(iprange *IPRange) {
+			defer wg.Done()
+			ip, ipnet, err := net.ParseCIDR(iprange.IPPrefix)
+			if err != nil {
+				log.Println(err)
+			} else {
+				for ip := ip.Mask(ipnet.Mask); ipnet.Contains(ip); incrementIP(ip) {
+					err := RedisConnPool.Do(radix.Cmd(nil, "PFADD", "IPADDRS", ip.String()))
+					if err != nil {
+						log.Println(err)
+					}
+					atomic.AddUint64(&ipCount, 1)
+				}
+			}
+
+		}(&ipp)
+	}
+	wg.Wait()
+	fmt.Printf("Unique IP Addresses: %d\n", ipCount)
+}
+
+```
+
+Um dos testes que rodei tinha a intenção de ver é como o banco de dados do Nazaré cresce em relaçao ao do Redis e também como a concorrencia de Go favorece a arquitetura que escolhi. O Redis é bem maduro e não era minha intenção competir com um software que já se provou ha anos em produção, portanto você pode encontrar banco de dados que crescem mais que o redis ou tempos diferentes de inserção.
+
 
 #### Bonus: TopK
+
+Eu coloquei um algoritmo como bonus pois ainda estou estudando e fazendo testes simples. Este algoritmo pertence a um grupo chamado de Top-K que são utilizados para encontrar os "Top" K elementos mais frequentes em um stream de dados. Sistemas de coleta e monitoração de métrica podem se beneficiar deste algoritmo para manter um rascunho em tempo quase real de dados em um stream. Meu interesse especifico é deduplicação de dados e criação de padrões para detectar mudança de comportamento.
+
+A biblioteca que estou usando para explorar este algoritmo é [https://github.com/axiomhq/topk](https://github.com/axiomhq/topk) e um dos artigos em que ela é baseada esta aqui: [https://www.hlt.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf](https://www.hlt.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf). Esta implementação pode ser util para aplicações como load balancers (monitrar em tempo real stream de dados de servidores para definir qual upstream pode receber um request com folga) e também preparação para ajudar em problemas de classificação e recomendação de produtos (produtos mais procurados, clickados ou vendidos).
+
+Quando falamos de implementar estes algoritmos é interessante observar quais otimizações foram feitas. Este artigo [https://www.cs.rice.edu/~as143/Papers/topkapi.pdf](https://www.cs.rice.edu/~as143/Papers/topkapi.pdf) foi interessante para entender a comparação entre maneiras de encontrar os Top-K itens em sistemas distribuidos.
+
+```
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"log"
+	"net"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/axiomhq/topk"
+)
+
+/*
+{
+      "ip_prefix": "54.239.1.96/28",
+      "region": "eu-north-1",
+      "service": "AMAZON",
+      "network_border_group": "eu-north-1"
+	},
+
+*/
+
+// IPRange register
+type IPRange struct {
+	IPPrefix           string `json:"ip_prefix"`
+	Region             string `json:"region"`
+	Service            string `json:"service"`
+	NetworkBorderGroup string `json:"network_border_group"`
+}
+
+// IPRanges struct
+type IPRanges struct {
+	SyncToken  string    `json:"syncToken"`
+	CreateDate string    `json:"createDate"`
+	Prefixes   []IPRange `json:"prefixes"`
+}
+
+func fetchAWSRanges() (*IPRanges, error) {
+	// aws ip ranges
+	// https://ip-ranges.amazonaws.com/ip-ranges.json
+
+	var body []byte
+	var err error
+
+	httpClient := http.Client{
+		Timeout: time.Second * 2, // Timeout after 2 seconds
+	}
+
+	req, err := http.NewRequest(http.MethodGet, "https://ip-ranges.amazonaws.com/ip-ranges.json", nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	res, err := httpClient.Do(req)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if res.Body != nil {
+		defer res.Body.Close()
+	}
+
+	if body, err = ioutil.ReadAll(res.Body); err != nil {
+		return nil, err
+	}
+
+	IPR := IPRanges{}
+	if err = json.Unmarshal(body, &IPR); err != nil {
+		log.Fatalf("unable to parse value: %q, error: %s", string(body), err.Error())
+		return nil, err
+	}
+
+	return &IPR, nil
+}
+
+func incrementIP(ip net.IP) {
+	for j := len(ip) - 1; j >= 0; j-- {
+		ip[j]++
+		if ip[j] > 0 {
+			break
+		}
+	}
+}
+
+func main() {
+	var ipCount uint64
+
+	ipr, err := fetchAWSRanges()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Ranges: %d\n", len(ipr.Prefixes))
+
+	tk := topk.New(100)
+
+	ipCount = 0
+	rangeCount := 0
+	exactCount := make(map[string]int)
+
+	for _, ipp := range ipr.Prefixes {
+		rangeCount++
+		//Uncomment to test a shorter run
+		//if rangeCount > 100 {
+		//	break
+		//}
+
+		ip, ipnet, err := net.ParseCIDR(ipp.IPPrefix)
+		if err != nil {
+			log.Println(err)
+		} else {
+			for ip := ip.Mask(ipnet.Mask); ipnet.Contains(ip); incrementIP(ip) {
+				// calculate most common first 2 octets from ip address (xx.yy)
+				octetPrefix := strings.Split(ip.String(), ".")
+				op := fmt.Sprintf("%s.%s", octetPrefix[0], octetPrefix[1])
+				exactCount[op]++
+
+				e := tk.Insert(op, 1)
+				if e.Count < exactCount[op] {
+					fmt.Printf("Error: estimate lower than exact: key=%v, exact=%v, estimate=%v\n", e.Key, exactCount[op], e.Count)
+				}
+				if e.Count-e.Error > exactCount[op] {
+					fmt.Printf("Error: error bounds too large: key=%v, count=%v, error=%v, exact=%v\n", e.Key, e.Count, e.Error, exactCount[op])
+				}
+			}
+		}
+
+	}
+	fmt.Printf("Unique IP Addresses: %d\n", ipCount)
+	el := tk.Estimate("52.94")
+	fmt.Printf("Prefix 52.94 ranks at %d\n ", el.Count)
+
+	kk := tk.Keys()
+	fmt.Println("List top 10 matches\nFirst 2 IP octets - Count")
+	for i := 0; i < 10; i++ {
+		fmt.Printf("%s - %d\n", kk[i].Key, kk[i].Count)
+	}
+
+}
+
+```
+
+O programa acima usa a mesma fonte de endereços IPs da AWS, mas comparando apenas os dois primeiros octetos do IP para ver quais grupos aparecem mais entre os ranges e aonde um par de octetos especifico está no conjunto total de dados.
+
+```
+$ go run topk.go
+Ranges: 2946
+Unique IP Addresses: 0
+Prefix 52.94 ranks at 3088
+ List top 10 matches
+First 2 IP octets - Count
+
+13.236 - 65536
+13.237 - 65536
+13.238 - 65536
+13.239 - 65536
+15.185 - 65536
+18.200 - 65536
+18.232 - 65536
+18.233 - 65536
+18.234 - 65536
+18.235 - 65536
+```
+
+
+##### Conclusão
+
+Como escrevi no inicio, este livro é um trabalho em evolução. Até aqui eu usei um projeto meu e algoritmos que aprendi para problemas que eu vi. Eu quis colocar estas informações em ordem para que qualquer pessoa interessada pudesse testar rapidamente e tirar suas conclusões. 
+
+Se você ver um erro, algoritmo que pode ser interessante ou tiver alguma idéia, por favor compartilhe comigo.
+
+Gleicon
+
+
+
 
