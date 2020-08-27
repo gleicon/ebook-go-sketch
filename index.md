@@ -1,21 +1,15 @@
 
-
-   * [Estruturas de dados probabilísticas (Sketch Data Structures) e Go](#estruturas-de-dados-probabilísticas-sketch-data-structures-e-go)
-            * [Introdução](#introdução)
-            * [Cache](#cache)
-            * [Bloom Filter](#bloom-filter)
-                  * [O que é um conjunto (Set)?](#o-que-é-um-conjunto-set)
-                  * [Funções de Hash](#funções-de-hash)
-            * [Cuckoo Filter](#cuckoo-filter)
-            * [HyperLogLog](#hyperloglog)
-            * [O que procurar em uma biblioteca?](#o-que-procurar-em-uma-biblioteca)
-            * [Estudo de caso](#estudo-de-caso)
-            * [Nazaré](#nazaré)
-                  * [Comandos Redis implementados e bibliotecas utilizadas](#comandos-redis-implementados-e-bibliotecas-utilizadas)
-                  * [Organização do código](#organização-do-código)
-                  * [Testes](#testes)
-            * [Bonus: TopK](#bonus-topk)
-               * [Conclusão](#conclusão)
+  * [Estruturas de dados probabilísticas (Sketch Data Structures) e Go](#estruturas-de-dados-probabilísticas-sketch-data-structures-e-go)
+  * [Introdução](#introdução)    
+  * [Cache](#cache)    
+  * [Bloom Filter](#bloom-filter)
+  * [Cuckoo Filter](#cuckoo-filter)
+  * [HyperLogLog](#hyperloglog)
+  * [O que procurar em uma biblioteca?](#o-que-procurar-em-uma-biblioteca)
+  * [Estudo de caso](#estudo-de-caso)
+  * [Nazaré](#nazaré)
+  * [Bonus: TopK](#bonus-topk)
+  * [Conclusão](#conclusão)
             
 
 
