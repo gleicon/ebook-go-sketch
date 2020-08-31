@@ -42,6 +42,6 @@ func main() {
 		panic(err)
 	}
 	fmt.Println("HLL total size:\t", len(data2))
-	fmt.Println("Map total size:\t", binary.size(unique))
+	fmt.Println("Map total size:\t", len(unique))
 
 }
